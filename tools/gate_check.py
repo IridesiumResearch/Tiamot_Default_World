@@ -19,10 +19,11 @@ R_DISC = 59.0
 K = 5.0
 STACK_Y = 2.0
 SUMMIT, DOME_DROP = 19.0, 2.5
-RELIEF_AMP, RELIEF_FLOOR, RELIEF_RAMP, CROWN_U = 4.0, 0.25, 27.0, 0.0064
-DETAIL_AMP = 0.25
+RELIEF_AMP, RELIEF_FLOOR, RELIEF_RAMP, CROWN_U = 4.0, 0.5, 27.0, 0.0064
+DETAIL_AMP = 0.5
+BLUFF_AMP = 0.008
 KNOTS = [(16.5, 59.0), (3.1, 58.5), (-8.0, 46.0), (-12.0, 30.0), (-16.0, 16.0),
-         (-25.0, 6.0), (-37.0, 2.0), (-63.0, 0.9), (-70.0, 0.0)]
+         (-25.0, 6.0), (-37.0, 2.0), (-70.0, 0.0)]
 FLANK_WARP = 0.15
 MAGMA_R = 55.0
 def blocks_in_e(n): return n * K * SCALE
@@ -74,7 +75,7 @@ def classify(cx, cy, cz):
     ulo, uhi = r2lo / R2_DISC, r2hi / R2_DISC
     Ylo, Yhi = (y0 - Y0) * SCALE, (y1 - Y0) * SCALE
     dmax = dome_at(ulo) - Ylo; dmin = dome_at(uhi) - Yhi
-    relief = NOISE_BOUND * (RELIEF_AMP * mask_at(ulo) + DETAIL_AMP) + SAFETY
+    relief = NOISE_BOUND * (RELIEF_AMP * mask_at(ulo) + DETAIL_AMP) + BLUFF_AMP + SAFETY
     tmax, tmin = dmax + relief, dmin - relief
     w_hi = half_width_at(Yhi) * WARP_HI + SAFETY
     w_lo = half_width_at(Ylo) * WARP_LO - SAFETY

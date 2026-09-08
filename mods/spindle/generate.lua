@@ -16,7 +16,12 @@
 --
 -- Fills run in order and later ones overwrite: stone wherever it is solid,
 -- gloam stone below 1.6 km, abyss stone below 4 km, then the skin bands on
--- top, then the core stack over the middle, then the Hollow carved out of it.
+-- top, boulders on the ground, then the core stack over the middle, then the
+-- Hollow carved out of it.
+--
+-- Every fill a player can see runs at sub-node resolution (shape.SURFACE_DETAIL),
+-- so slopes are slopes rather than staircases. The engine refines only the
+-- blocks a surface crosses, so it is about 1.5x the block-resolution cost.
 --
 -- Nothing here samples a field. Everything in Lua is a BOUND on a chunk,
 -- computed with + - * / on doubles, which is IEEE-exact everywhere.
@@ -26,6 +31,7 @@ local layers = spindle.layers
 local blocks = spindle.blocks
 local P = shape.programs
 local AIR = game.AIR
+local DETAIL = shape.SURFACE_DETAIL
 
 local SCALE = shape.SCALE
 local R2_DISC = shape.R_DISC * shape.R_DISC
@@ -35,6 +41,7 @@ local WARP_HI = 1.0 + shape.FLANK_WARP * NOISE_BOUND
 local WARP_LO = 1.0 - shape.FLANK_WARP * NOISE_BOUND
 local STACK_Y_BLOCKS = shape.STACK_Y * 1000 + shape.Y0
 local HOLLOW_IN = (shape.HOLLOW_R - SAFETY) * (shape.HOLLOW_R - SAFETY)
+local BOULDERS_EVERY = 3          -- one surface chunk in this many gets the boulder field
 
 -- Chunk-class counters, logged now and then so the cost mix is visible.
 local stats = { air = 0, hollow = 0, filled = 0, carved = 0, surface = 0, shells = 0, total = 0 }
@@ -84,8 +91,9 @@ game.register_on_generate(function(buf, pos)
     -- D, the smooth depth below the base dome: exact bounds.
     local dmax = shape.dome_at(ulo) - Ylo
     local dmin = shape.dome_at(uhi) - Yhi
-    -- T, the real depth: D plus whatever the relief can add.
-    local relief = NOISE_BOUND * (shape.RELIEF_AMP * shape.mask_at(ulo) + shape.DETAIL_AMP) + SAFETY
+    -- T, the real depth: D plus whatever the relief, detail and bluffs can add.
+    local relief = NOISE_BOUND * (shape.RELIEF_AMP * shape.mask_at(ulo) + shape.DETAIL_AMP)
+        + shape.BLUFF_AMP + SAFETY
     local tmax = dmax + relief
     local tmin = dmin - relief
 
@@ -125,27 +133,34 @@ game.register_on_generate(function(buf, pos)
         buf:fill_all(base)
         stats.filled = stats.filled + 1
     else
-        buf:fill_density(V.solid, base)
+        buf:fill_density(V.solid, base, DETAIL)
         stats.carved = stats.carved + 1
     end
 
     if not tail then
         -- The deep bands, exact and free of noise.
         if level < 1 and dmax > shape.GLOAM_D - SAFETY then
-            buf:fill_density(V.gloam, blocks.gloam_stone)
+            buf:fill_density(V.gloam, blocks.gloam_stone, DETAIL)
         end
         if level < 2 and dmax > shape.ABYSS_D - SAFETY then
-            buf:fill_density(V.abyss, blocks.abyss_stone)
+            buf:fill_density(V.abyss, blocks.abyss_stone, DETAIL)
         end
         -- The skin, wherever the real surface can be.
         if tmin < shape.SKIN_DIRT then
             stats.surface = stats.surface + 1
-            buf:fill_density(V.dirt, blocks.dirt)
-            if inside_body and tmin < shape.SKIN_TOP then
-                for _, biome in ipairs(spindle.surface_biomes_in(ulo, uhi)) do
-                    for _, fill in ipairs(biome.fills) do
-                        buf:fill_density(fill.field, fill.material)
+            buf:fill_density(V.dirt, blocks.dirt, DETAIL)
+            if inside_body then
+                if tmin < shape.SKIN_TOP then
+                    for _, biome in ipairs(spindle.surface_biomes_in(ulo, uhi)) do
+                        for _, fill in ipairs(biome.fills) do
+                            buf:fill_density(fill.field, fill.material, DETAIL)
+                        end
                     end
+                end
+                -- Boulders on some chunks and not others, so they come in
+                -- groups rather than as an even scatter.
+                if game.rng_stream(pos, "boulders"):below(BOULDERS_EVERY) == 0 then
+                    buf:fill_density(P.top.boulders, blocks.stone, DETAIL)
                 end
             end
         end
@@ -156,12 +171,12 @@ game.register_on_generate(function(buf, pos)
     for _, shell in ipairs(shape.SHELLS) do
         local id, outer, inner = shell[1], shell[2], shell[3]
         if e2lo < outer * outer and e2hi > inner * inner then
-            buf:fill_density(P.shells[id], blocks[layers.SHELL_MATERIAL[id]])
+            buf:fill_density(P.shells[id], blocks[layers.SHELL_MATERIAL[id]], DETAIL)
             touched = true
         end
     end
     if e2lo < shape.HOLLOW_R * shape.HOLLOW_R then
-        buf:fill_density(P.hollow, AIR)
+        buf:fill_density(P.hollow, AIR, DETAIL)
         touched = true
     end
     if touched then

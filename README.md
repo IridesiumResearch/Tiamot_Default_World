@@ -54,6 +54,25 @@ and names any biome that is registered but not yet built.
 > The engine's own test suite lists `game/` exhaustively, so leave the junction
 > out (or remove it) when running `cargo test` in the engine repository.
 
+## What the terrain is made of
+
+- **Relief**: 3D fBm with a vertical gradient, masked so the Crown is a
+  massif (±1.7 km) and the rings roll (±0.84 km), plus a 1.2 km-wavelength
+  detail term (±0.2 km).
+- **Bluffs**: a low-frequency noise clamped hard, added to the terrain field,
+  gives plateaus with 16-block steps between them — terraces and small cliffs
+  every few hundred blocks.
+- **Boulders**: a fine noise thresholded rare in the six blocks of air above
+  the ground, on one surface chunk in three, so they come in groups.
+- **Sub-node surfaces**: every fill a player can see runs with
+  `{ detail = "smooth" }`, so slopes are slopes. Constants in `shape.lua`.
+- **Tint**: every block declares the engine's large-scale colour field, tone
+  only for rock and a green–yellow hue shift for grass and leaves.
+
+Erosion is not here yet and cannot be until the engine can feed a map into a
+density field; what the options are and what each needs is in
+[`docs/erosion-options.md`](docs/erosion-options.md).
+
 ## In play
 
 - A first visit drops you above the temperate woodlands and finds the ground.
@@ -89,8 +108,10 @@ vertically at the pole is 125 km-blocks thick in E.
 Every biome from the design is registered in `biomes/catalogue.lua`; each is
 built one at a time in its own file. Built so far:
 
-- [x] 1.1 Temperate Woodlands — grass on the temperate ring's wetter half;
-      oaks grow in by random tick.
+- [x] 1.1 Temperate Woodlands — grass on the temperate ring's wetter half.
+      Canopies are generated as organic leaf blobs above the ground (a density
+      band, sub-node smooth); trunks grow up into them by random tick on
+      grass.
 
 ## Licence
 
