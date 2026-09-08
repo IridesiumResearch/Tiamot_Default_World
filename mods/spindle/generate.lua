@@ -1,0 +1,172 @@
+-- SPDX-FileCopyrightText: Iridesium
+-- SPDX-License-Identifier: GPL-3.0-only
+--
+-- The generator: one callback, a gate, and a short list of native fills.
+--
+-- Most of a 120,000-block world is solid rock or open air that no noise can
+-- change. The gate classifies each chunk from its integer bounds — always
+-- conservatively, so a chunk near a boundary can only pay MORE than it needed,
+-- never generate differently — and runs only the fills that can matter.
+--
+-- Two depths drive it. T is the noisy terrain field: where the real surface
+-- is, known only to within the relief. D is the smooth depth below the base
+-- dome, known exactly. The skin (dirt, the biome's block) follows T; the deep
+-- bands (gloam, abyss) follow D, so a chunk two kilometres down pays for no
+-- noise at all.
+--
+-- Fills run in order and later ones overwrite: stone wherever it is solid,
+-- gloam stone below 1.6 km, abyss stone below 4 km, then the skin bands on
+-- top, then the core stack over the middle, then the Hollow carved out of it.
+--
+-- Nothing here samples a field. Everything in Lua is a BOUND on a chunk,
+-- computed with + - * / on doubles, which is IEEE-exact everywhere.
+
+local shape = spindle.shape
+local layers = spindle.layers
+local blocks = spindle.blocks
+local P = shape.programs
+local AIR = game.AIR
+
+local SCALE = shape.SCALE
+local R2_DISC = shape.R_DISC * shape.R_DISC
+local NOISE_BOUND = 0.5           -- the fractal stays within +/-0.42
+local SAFETY = 0.05               -- km, added to every bound
+local WARP_HI = 1.0 + shape.FLANK_WARP * NOISE_BOUND
+local WARP_LO = 1.0 - shape.FLANK_WARP * NOISE_BOUND
+local STACK_Y_BLOCKS = shape.STACK_Y * 1000 + shape.Y0
+local HOLLOW_IN = (shape.HOLLOW_R - SAFETY) * (shape.HOLLOW_R - SAFETY)
+
+-- Chunk-class counters, logged now and then so the cost mix is visible.
+local stats = { air = 0, hollow = 0, filled = 0, carved = 0, surface = 0, shells = 0, total = 0 }
+local LOG_EVERY = 4096
+
+-- Smallest and largest |value| over the integer range [a0, a1].
+local function axis_bounds(a0, a1)
+    local lo
+    if a0 <= 0 and a1 >= 0 then
+        lo = 0
+    else
+        lo = math.min(math.abs(a0), math.abs(a1))
+    end
+    return lo, math.max(math.abs(a0), math.abs(a1))
+end
+
+-- The deepest band a chunk is guaranteed to be in, from the smooth depth:
+-- its material and how many of the band fills it already implies.
+local function band_for(dmin)
+    if dmin > shape.ABYSS_D + SAFETY then return blocks.abyss_stone, 2 end
+    if dmin > shape.GLOAM_D + SAFETY then return blocks.gloam_stone, 1 end
+    return blocks.stone, 0
+end
+
+game.register_on_generate(function(buf, pos)
+    spindle.seed = pos.seed
+    stats.total = stats.total + 1
+    if stats.total % LOG_EVERY == 0 then
+        game.log(string.format(
+            "spindle chunks: %d total — air %d, hollow %d, filled %d, carved %d (surface %d), shells %d",
+            stats.total, stats.air, stats.hollow, stats.filled, stats.carved, stats.surface, stats.shells))
+    end
+
+    -- Order-independent with any other overworld generator: start empty.
+    buf:fill_all(AIR)
+
+    -- Integer bounds of the chunk, in blocks.
+    local x0, z0, y0 = pos.x * 16, pos.z * 16, pos.y * 16
+    local x1, z1, y1 = x0 + 15, z0 + 15, y0 + 15
+    local xlo, xhi = axis_bounds(x0, x1)
+    local zlo, zhi = axis_bounds(z0, z1)
+    local r2lo = (xlo * xlo + zlo * zlo) * 1e-6     -- km^2
+    local r2hi = (xhi * xhi + zhi * zhi) * 1e-6
+    local ulo, uhi = r2lo / R2_DISC, r2hi / R2_DISC
+    local Ylo, Yhi = (y0 - shape.Y0) * SCALE, (y1 - shape.Y0) * SCALE   -- Spindle km
+
+    -- D, the smooth depth below the base dome: exact bounds.
+    local dmax = shape.dome_at(ulo) - Ylo
+    local dmin = shape.dome_at(uhi) - Yhi
+    -- T, the real depth: D plus whatever the relief can add.
+    local relief = NOISE_BOUND * (shape.RELIEF_AMP * shape.mask_at(ulo) + shape.DETAIL_AMP) + SAFETY
+    local tmax = dmax + relief
+    local tmin = dmin - relief
+
+    -- Bounds on the body: W is non-decreasing in Y.
+    local w_hi = shape.half_width_at(Yhi) * WARP_HI + SAFETY
+    local w_lo = shape.half_width_at(Ylo) * WARP_LO - SAFETY
+    local outside_body = r2lo > w_hi * w_hi
+    local inside_body = w_lo > 0 and r2hi < w_lo * w_lo
+
+    -- Bounds on the squared ellipsoidal distance from the stack centre.
+    local dylo, dyhi = axis_bounds(y0 - STACK_Y_BLOCKS, y1 - STACK_Y_BLOCKS)
+    local ks = shape.K * SCALE
+    local e2lo = r2lo + (dylo * ks) * (dylo * ks)
+    local e2hi = r2hi + (dyhi * ks) * (dyhi * ks)
+
+    -- Air: above the surface, beyond the body, or wholly inside the Hollow.
+    if tmax < 0 or outside_body then
+        stats.air = stats.air + 1
+        return
+    end
+    if e2hi < HOLLOW_IN then
+        stats.hollow = stats.hollow + 1
+        return
+    end
+
+    -- Rock. Which programs, and what it is made of.
+    local V = inside_body and P.top or P.flank
+    local base, level = band_for(dmin)
+    local tail = false
+    if Yhi < shape.APEX_Y then
+        base, tail = blocks.apex_stone, true
+    elseif Yhi < shape.TAIL_Y then
+        base, tail = blocks.marrow, true
+    end
+
+    if inside_body and tmin > 0 then
+        buf:fill_all(base)
+        stats.filled = stats.filled + 1
+    else
+        buf:fill_density(V.solid, base)
+        stats.carved = stats.carved + 1
+    end
+
+    if not tail then
+        -- The deep bands, exact and free of noise.
+        if level < 1 and dmax > shape.GLOAM_D - SAFETY then
+            buf:fill_density(V.gloam, blocks.gloam_stone)
+        end
+        if level < 2 and dmax > shape.ABYSS_D - SAFETY then
+            buf:fill_density(V.abyss, blocks.abyss_stone)
+        end
+        -- The skin, wherever the real surface can be.
+        if tmin < shape.SKIN_DIRT then
+            stats.surface = stats.surface + 1
+            buf:fill_density(V.dirt, blocks.dirt)
+            if inside_body and tmin < shape.SKIN_TOP then
+                for _, biome in ipairs(spindle.surface_biomes_in(ulo, uhi)) do
+                    for _, fill in ipairs(biome.fills) do
+                        buf:fill_density(fill.field, fill.material)
+                    end
+                end
+            end
+        end
+    end
+
+    -- The core stack, outermost first, only the shells this chunk can touch.
+    local touched = false
+    for _, shell in ipairs(shape.SHELLS) do
+        local id, outer, inner = shell[1], shell[2], shell[3]
+        if e2lo < outer * outer and e2hi > inner * inner then
+            buf:fill_density(P.shells[id], blocks[layers.SHELL_MATERIAL[id]])
+            touched = true
+        end
+    end
+    if e2lo < shape.HOLLOW_R * shape.HOLLOW_R then
+        buf:fill_density(P.hollow, AIR)
+        touched = true
+    end
+    if touched then
+        stats.shells = stats.shells + 1
+    end
+end)
+
+game.log("spindle: registered the generator")

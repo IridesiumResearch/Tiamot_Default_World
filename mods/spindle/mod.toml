@@ -1,0 +1,11 @@
+# Spindle — the default world for Tiamot.
+#
+# A spindle-shaped flat earth with a fire-cored hollow: a dome on top, a body
+# that narrows to a needle beneath, a stack of shells around a void in the
+# middle. See ../../docs/spindle-mod-plan.md for the design and the numbers.
+id = "spindle"
+name = "Spindle"
+version = "0.1.0"
+depends = ["core >=0.1", "core_sky >=0.1"]
+description = "A spindle-shaped flat earth with a fire-cored hollow. A world, not a fixture."
+license = "GPL-3.0-only"

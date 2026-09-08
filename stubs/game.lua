@@ -1,0 +1,2334 @@
+-- SPDX-FileCopyrightText: Iridesium
+-- SPDX-License-Identifier: MIT
+--
+-- Type stubs for the Tiamot mod API, annotated for the Lua Language Server.
+--
+-- MIT licensed, unlike the engine — copy this file into your mod, closed-source
+-- or otherwise. See ../README.md.
+--
+-- =========================================================================
+-- MODS ARE WRITTEN AGAINST LUA 5.4.
+-- =========================================================================
+--
+-- That is settled and does not change; see docs/scripting-vm.md for the
+-- measurements behind it. Lua 5.4 means you have an integer subtype, `//`, and
+-- `%` that behaves on integers — which matters, because quantities in this
+-- engine are integer units (27 per block) and you will divide them constantly.
+--
+-- =========================================================================
+-- THE ONE RULE THAT IS NOT A STYLE PREFERENCE
+-- =========================================================================
+--
+-- **Do not compute simulation values in Lua.**
+--
+-- The engine guarantees that the same seed produces bit-identical worlds on
+-- Linux, Windows and macOS. That guarantee rests on restricting which
+-- floating-point operations run — and the engine cannot police what happens
+-- inside a script. `x^0.5` in your mod is a platform library call, and it will
+-- give different last bits on different machines.
+--
+-- So: ask the engine for whole buffers and hand them to whole-buffer
+-- operations. `game.noise_heightmap` gives you a heightmap;
+-- `buf:fill_below_heightmap` consumes it. Neither lets you see the individual
+-- numbers, and that is deliberate rather than an omission.
+--
+-- This file describes what exists. `scripts/check-stubs.sh` fails CI if the
+-- engine registers something this file does not document.
+
+---@meta
+
+---@class Tiamot.ChunkPos
+---@field x integer Chunk x, in chunks.
+---@field y integer Chunk y, in chunks.
+---@field z integer Chunk z, in chunks.
+---@field seed integer The world seed.
+
+---A per-column height field. Produced and consumed natively; you cannot read
+---the individual heights, by design.
+---@class Tiamot.Heightmap
+local Heightmap = {}
+
+---Number of columns. 256 for a chunk.
+---@return integer
+function Heightmap:len() end
+
+---A chunk being generated.
+---
+---Every operation is whole-buffer or whole-block. Block-level calls are the
+---cheap default; sub-node calls expand the buffer 27x and are opt-in (see the
+---Sub-Node Contract, §5).
+---@class Tiamot.ChunkBuffer
+local ChunkBuffer = {}
+
+---Fills every block with one material.
+---@param material integer A numeric block id from `game.register_block` or `game.get_block_id`.
+function ChunkBuffer:fill_all(material) end
+
+---Fills every block below the given surface. The workhorse terrain operation.
+---@param heightmap Tiamot.Heightmap
+---@param material integer
+function ChunkBuffer:fill_below_heightmap(heightmap, material) end
+
+---Fills every block where a density field is POSITIVE.
+---
+---**Greater than zero is solid, and that is the only rule.** A threshold
+---argument would be a second way to say what subtracting a constant already
+---says inside the field, where the rest of the arithmetic lives.
+---
+---This is how you get terrain a heightmap cannot describe: overhangs, arches,
+---and caves. See `game.density`.
+---
+---Evaluated at BLOCK resolution — one sample per block. Sub-node resolution is
+---27 times the samples and is not offered; carve detail afterwards with
+---`set_subnode`, where the cost is proportional to what you actually change.
+---
+---Measured on the reference machine, per chunk: **358 us** for a single noise
+---node, **719 us** for terrain with caves cut out of it. For comparison a
+---heightmap generator is 52 us and lighting the same chunk is 1.44 ms. It runs
+---once, when the chunk is first generated, and never again.
+---@param density Tiamot.Density
+---@param material integer
+function ChunkBuffer:fill_density(density, material) end
+
+---Fills every block below `level` with a fluid, around the terrain.
+---
+---**This is the only place an ocean can come from.** The fluid solver conserves
+---volume — it moves what exists and creates nothing — so there are no sources
+---and nothing pours a sea into being at runtime. A world with standing water is
+---a world whose generator placed it.
+---
+---Fluid is a LAYER over the same blocks, not a material: how much goes into a
+---block is the room the terrain leaves it, out of 27 cells. A solid block takes
+---nothing, an empty one takes all 27, a half-carved one takes what is left — so
+---a shoreline falls out of the terrain rather than having to be described.
+---
+---`level` is a WORLD height, like a heightmap's, so a sea level is one number
+---for the whole world and does not restart at every chunk.
+---
+---```lua
+---game.register_fluid{ id = "water", material = "my_mod:water_block" }
+---
+---game.register_on_generate(function(buf, pos)
+---    buf:fill_below_heightmap(game.noise_heightmap(pos, SHAPE), stone)
+---    buf:fill_fluid_below(0, "my_mod:water")   -- sea level at y = 0
+---end)
+---```
+---
+---The fluid is named in full, `"your_mod:its_id"`, and must have been
+---registered with `game.register_fluid`. An unknown name is an error naming it
+---rather than a silently dry world.
+---@param level integer World height to fill up to, exclusive.
+---@param fluid string The qualified fluid id.
+function ChunkBuffer:fill_fluid_below(level, fluid) end
+
+---Sets one whole block. Coordinates are chunk-local, 0..15.
+---@param x integer
+---@param y integer
+---@param z integer
+---@param material integer
+function ChunkBuffer:set_block(x, y, z, material) end
+
+---Sets one sub-node cell. **Expands the buffer to sub-node resolution**, which
+---costs 27x the memory and fill time. Opt-in for a reason.
+---@param bx integer Block x, 0..15.
+---@param by integer Block y, 0..15.
+---@param bz integer Block z, 0..15.
+---@param sx integer Sub-node x within the block, 0..2.
+---@param sy integer Sub-node y within the block, 0..2.
+---@param sz integer Sub-node z within the block, 0..2.
+---@param material integer
+function ChunkBuffer:set_subnode(bx, by, bz, sx, sy, sz, material) end
+
+---Whether this buffer has expanded to sub-node resolution.
+---@return boolean
+function ChunkBuffer:is_expanded() end
+
+---A named random stream. Reproducible for the same world seed, chunk and name;
+---uncorrelated with streams under other names.
+---@class Tiamot.Stream
+local Stream = {}
+
+---A uniformly distributed integer in `0..bound-1`.
+---@param bound integer
+---@return integer
+function Stream:below(bound) end
+
+---A boolean with even odds.
+---@return boolean
+function Stream:next_bool() end
+
+---Options for `game.noise_heightmap`.
+---@class Tiamot.NoiseOptions
+---@field octaves integer? Detail levels. Each doubles the cost. Default 4, capped at 16.
+---@field frequency number? Inverse feature size. Default 0.02.
+---@field lacunarity number? Frequency multiplier per octave. Default 2.0.
+---@field gain number? Amplitude multiplier per octave. Default 0.5.
+---@field amplitude number? Vertical scale, in blocks. Default 6.0.
+---@field base integer? Height the noise varies around, in world blocks. Default 0.
+
+---Fields accepted by `game.register_block`. Anything else is an error naming
+---the field — a typo should stop you, not silently take a default.
+---@class Tiamot.BlockSpec
+---@field id string Required. Namespaced with your mod id automatically.
+---@field name string? Display name.
+---@field description string? One-line description.
+---@field hardness number? Seconds to break with a bare hand. Default 0.75. Must not be negative. One SUB-NODE of it costs a thirteen-and-a-half-th of this, so chiselling a block out cell by cell takes twice as long as smashing it whole.
+---@field dominance number? How strongly this material imposes its hardness on a block it is only part of. Default 1.0. Must be positive. See below.
+---@field drops table<string, integer>? Overrides what breaking it yields: block id to UNITS (27 to a block). Omit for the ordinary rule — the block drops itself, 27 units whole or one per occupied sub-node. Bare ids are namespaced with your mod id.
+---@field tags string[]? Arbitrary tags for other mods to match on.
+---@field textures Tiamot.BlockTextures? Which images clients draw this block with.
+---@field sounds { step: string }? What this block sounds like underfoot. The client plays its own footsteps from its own movement, so this is the only way it can know. Unqualified ids mean your own mod's.
+---@field light_emit Tiamot.LightEmit? Light this block gives off. Omit for anything that is not a lamp.
+---@field transparent boolean? Whether this block can be seen through: glass. **A flag, not an alpha value** — what it looks like is its texture's own alpha, and a second opacity number beside it would be two sources of truth for one appearance. Three things change (Sub-Node Contract §8.1): a face draws where exactly one side of it is transparent, so a wall behind a window is not a hole and two panes together do not double up; the block is drawn in a blended pass after the opaque world; and light passes through it, so a glass roof does not make a dark room. **Collision does NOT change — glass is solid** and you cannot walk through a window. Only a whole block of one transparent material passes light; a chiselled or mixed block holding glass falls back to the ordinary cell rule.
+---@field absorbs { rate: integer, becomes: string? }? Ground that drinks. `rate` is how many of the block's 27 cells it takes out of fluid touching it, per fluid tick, 1..=27. `becomes` is the block it turns into once it has taken them, qualified against your own mod — omit it for ground that drinks for ever without changing, which is a drain rather than a sponge. **Saturation is a chain of materials, not engine state** (Sub-Node Contract §4.3): `dirt` → `damp_dirt` → `saturated_dirt`, and the chain ends where a block stops naming a successor. A block of two or more materials never absorbs, because there is no way to turn one material inside a mix into its successor without per-cell saturation state.
+
+---How `dominance` decides a mixed block's hardness.
+---
+---A block is 27 sub-node cells and each may be a different material, so the
+---engine has to blend. It averages mining RATES, weighted by `dominance`:
+---
+---    rate = sum(dominance / hardness) / sum(dominance)     time = 1 / rate
+---
+---Averaging rates rather than times means the SOFT part of a block carries the
+---rest away for free — dirt mixed into stone breaks at nearly dirt's speed with
+---every dominance left at 1. What that alone cannot express is a material that
+---is *sticky*: hard to cut in a way that makes everything packed around it hard
+---to cut. `dominance` is that knob, and because the average is over rates it
+---works in both directions at once:
+---
+---    dirt:   hardness = 0.5,  dominance = 3   -- weakens anything it is in
+---    rubber: hardness = 10.0, dominance = 6   -- toughens anything it is in
+---
+---With those, half a block of dirt and stone breaks in 0.59 s (stone alone is
+---1.5 s) and half a block of rubber and stone takes 5.68 s. A block with no
+---`dominance` set anywhere still blends sensibly; the field is for materials
+---that should punch above their share.
+---
+---The blend never leaves the range its materials define: a block of stone and
+---dirt can never be harder than stone.
+
+---Light a block gives off, per colour channel, 0 to 15.
+---
+---There is no sunlight channel: daylight comes from the sky, not from a block.
+---A channel you omit is zero, so `{ r = 15 }` is a red lamp and not a white one.
+---
+---**The engine registers no light sources of its own.** A world whose mods
+---define no emissive block is lit only by the sky — that is a mod set's
+---decision, the same way a world with no tools is one nobody can dig in.
+---@class Tiamot.LightEmit
+---@field r integer? Red, 0..15. Default 0.
+---@field g integer? Green, 0..15. Default 0.
+---@field b integer? Blue, 0..15. Default 0.
+
+---Textures for a block. Paths are relative to your mod's own directory, and the
+---files are pushed to clients through the content pipeline — an absolute path,
+---or one containing `..`, is refused.
+---
+---Only `all` exists today. Per-face keys are a natural extension and are
+---deliberately not reserved in advance: adding them later is additive, whereas
+---shipping a six-key schema nothing renders yet would freeze a guess into the
+---mod API.
+---@class Tiamot.BlockTextures
+---@field all string Required. The image every face uses, e.g. `"textures/white.png"`.
+
+---Fields accepted by `game.register_tool`.
+---@class Tiamot.ToolSpec
+---@field id string Required. Namespaced with your mod id automatically.
+---@field name string? Display name.
+---@field brush string? What shape it removes: `"block"` (default) or `"subnode"`.
+---@field speed_multiplier number? How much faster than a bare hand. Default 1.0, must be positive.
+---@field default boolean? Whether this is what a player digs with holding nothing. The engine has no bare hand of its own, so a world whose mods register no default is one nobody can dig in. Lowest id wins if several mods mark one.
+
+---Fields accepted by `game.register_sky`.
+---
+---**Registration window only.** The engine has no sky of its own: a world whose
+---mods register none has no day and holds its colours fixed, which is a
+---legitimate world rather than a missing feature.
+---@class Tiamot.SkySpec
+---@field day_length_ticks integer Required. Ticks in a full day, at 20 ticks a second. Must be at least 1.
+---@field keyframes Tiamot.SkyKeyframe[]
+---@field start_time number? Where a fresh world's clock starts, 0..1. Defaults to mid-morning: a counter left at zero opens every world at midnight, which is the one hour with no sun in it. Required, and not empty. Need not be sorted — the engine sorts them, because an out-of-order list would make the sky walk backwards partway through the day.
+
+---One moment in your day.
+---
+---The client interpolates between keyframes, so a handful describes a whole
+---day. Make the last keyframe restate the first's colours, or the sky cuts hard
+---at the moment the clock wraps.
+---@class Tiamot.SkyKeyframe
+---@field time number Required. When in the day, 0 to 1, where 0 is midnight and 0.5 is noon.
+---@field sky number[] Required. `{r, g, b}` for the sky itself. Distance fog fades towards this, so it is also the horizon.
+---@field sun number[] Required. `{r, g, b}` tinting the sunlight stored in the world.
+---@field intensity number Required, 0 to 1. Scales stored sunlight at DRAW time — which is why a day/night cycle costs nothing: the world's sunlight is always full daylight and never needs relighting.
+---@field grade Tiamot.SkyGrade? Optional. How the finished picture is graded at this moment. Omit it and nothing is graded.
+
+---How a moment's finished picture is graded.
+---
+---**Lighting mode 3 only.** Grading happens in the post chain, and modes 1 and
+---2 have no post chain to put it in — so a grade is polish on the highest
+---setting rather than something the other modes will look wrong without.
+---
+---Every field is optional and defaults to doing nothing, so a keyframe can set
+---one knob without restating the rest. The client interpolates these between
+---keyframes like the colours, bakes the result into a lookup table once, and
+---applies it with a single texture read per pixel — nothing here costs per-pixel
+---maths, however many knobs you set.
+---
+---They apply in a fixed order: `exposure` multiplies the scene BEFORE the
+---highlight roll-off (which is what makes it decide how much of the picture
+---rolls off at all), then, on the finished image, `contrast` about mid grey,
+---`saturation`, `tint` then `offset`, and `gamma` last.
+---@class Tiamot.SkyGrade
+---@field exposure number? 0 to 4, default 1. Multiplies the scene before the tonemap.
+---@field tint number[]? `{r, g, b}`, each 0 to 4, default `{1, 1, 1}`. Multiplies the graded image.
+---@field offset number[]? `{r, g, b}`, each -1 to 1, default `{0, 0, 0}`. Added after `tint`.
+---@field contrast number? 0 to 4, default 1. Pushes each channel away from mid grey.
+---@field saturation number? 0 to 4, default 1. Zero is greyscale of the same brightness; above 1 exaggerates.
+---@field gamma number? 0.1 to 4, default 1. Applied last, per channel. Never 0 — a zero exponent maps the whole frame to white.
+
+---Fields accepted by `game.register_action`.
+---@class Tiamot.ActionSpec
+---@field id string Required. Namespaced with your mod id automatically.
+---@field default_key string? Suggested default binding, as a key name: "KeyF", "Space", "BracketLeft". The engine owns bindings; mods never read keys, and there is deliberately no way to ask which key a player chose.
+---@field description string? One line for the settings screen, shown beside your mod's name.
+
+---The mod API.
+---
+---Available inside your `init.lua` and every callback you register.
+---@class Tiamot.Game
+---@field CHUNK_BLOCKS integer Blocks along each axis of a chunk. 16.
+---@field UNITS_PER_BLOCK integer Sub-node units in a block. 27.
+---@field OCCUPANCY_FULL integer Every one of a block's 27 sub-nodes, as a mask. Compare `game.get_block`'s `occupancy` against it to ask "is this a whole block".
+---@field ITEMS_PER_STACK integer How many of a thing one inventory slot holds. 90. Anything over it spills into the next slot rather than being refused, so this is what a recipe means by "a stack" and never a limit on what a player may own.
+---@field AIR integer The numeric id of air. Always 0.
+---@field mod_id string Your mod's id, and your registration namespace.
+game = {}
+
+---Writes a line to the server log, attributed to your mod.
+---@param message string
+function game.log(message) end
+
+---Registers a block.
+---
+---**Registration window only.** Calling this after the engine freezes the
+---registries is an error — that is what makes numeric ids safe to persist.
+---@param spec Tiamot.BlockSpec
+---@return integer id The numeric id, for use with the fill operations.
+function game.register_block(spec) end
+
+---Registers the sky: how long a day is, and what colour it goes.
+---
+---**Registration window only.**
+---
+---Everything a player would call "the sky" is yours. The engine advances a
+---number from 0 to 1 over the period you set and interpolates between the
+---colours you list; it has no idea what dawn is.
+---@param spec Tiamot.SkySpec
+function game.register_sky(spec) end
+
+---Registers a tool.
+---
+---**Registration window only**, like `game.register_block`.
+---
+---`brush` is what makes sub-node resolution reachable from a mod. `"block"`
+---removes the whole block containing the targeted cell; `"subnode"` removes
+---only the cell under the crosshair, which is how a chisel works. An unknown
+---brush is an error naming it rather than a silent fallback.
+---@param spec Tiamot.ToolSpec
+function game.register_tool(spec) end
+
+---Makes an inventory that belongs to the WORLD rather than to a player.
+---Returns whether it is new.
+---
+---**A chest, a furnace, a hopper.** `game.register_view` gives every player one
+---of something — an armour rack, a tool belt — and that is the wrong shape for a
+---box in the ground: there is one of it, wherever it is, and whoever opens it
+---sees the same contents.
+---
+---`name` is yours to choose and yours to keep unique, the way a block id is. A
+---position in it is the obvious choice, because that is how you will find it
+---again: `"core_chest:at:" .. x .. "," .. y .. "," .. z`. **Not namespaced by
+---mod**, unlike `game.storage`, because two mods may legitimately want at the
+---same container — a hopper feeding a furnace is exactly that.
+---
+---The size applies to a container being MADE. An existing one keeps the size it
+---has, so calling this every time a chest is opened is safe and is the intended
+---shape: make-if-absent, then open.
+---
+---The engine owns the slots — stacking, unit conservation, the id map and the
+---save. You own where it is, what may go in it and who may open it.
+---@param name string
+---@param slots integer 1 to 256.
+---@return boolean created
+function game.make_container(name, slots) end
+
+---Opens a container for a player, so a screen can show it. Returns whether it
+---opened.
+---
+---Draw it with an `item_grid` naming the same string, in a dialog you show that
+---player. Clicks then work exactly as they do for their own inventory: left,
+---right, and shift to move a stack across.
+---
+---**One player at a time.** `false` means there is no such container, the player
+---is not here, or somebody else has it open — and the last is worth saying out
+---loud, because "somebody is using that" is a sentence a player understands.
+---Two people in one chest would each be shown a copy, and whoever closed second
+---would write theirs over the other's.
+---
+---It closes on its own when that player's screen closes and when they leave, so
+---the ordinary case needs no bookkeeping from you.
+---
+---```lua
+---local name = "core_chest:at:" .. x .. "," .. y .. "," .. z
+---game.make_container(name, 27)
+---if game.open_container(name, event.player) then
+---    game.show_dialog{ player = event.player, form = "chest", tree = {
+---        type = "container", direction = "column", children = {
+---            { type = "label", text = "Chest" },
+---            { type = "item_grid", view = name, columns = 9, first = 1, count = 27 },
+---            { type = "item_grid", view = "player:main", columns = 9, first = 1, count = 27 },
+---        },
+---    }}
+---else
+---    game.chat_to(event.player, "somebody is using that")
+---end
+---```
+---@param name string
+---@param player string The player's UUID, in hex.
+---@return boolean opened
+function game.open_container(name, player) end
+
+---Closes a container, putting its contents back into the world. Returns whether
+---anything came back.
+---
+---You rarely need this: closing the screen and leaving both do it. It is here
+---for a mod that wants the container back for its own reasons — to read it, or
+---to break the block it belongs to.
+---@param name string
+---@param player string The player's UUID, in hex.
+---@return boolean closed
+function game.close_container(name, player) end
+
+---What is in a container, in the same shape `game.inventory` reports stacks.
+---
+---**Empty while somebody has it open**, because those contents are in that
+---player's screen and about to change — answering with a copy that is already
+---stale would be worse than answering with nothing. Close it first if you need
+---to know.
+---@param name string
+---@return table[] stacks
+function game.container(name) end
+
+---Removes a container and hands back everything that was in it.
+---
+---**Nothing is destroyed.** The contents come back so you can drop them where
+---the block was; an engine that emptied a chest into nowhere would be a
+---conservation hole (charter rule 5) on a path a player caused and can see.
+---
+---Returns an empty list, and removes nothing, while somebody has it open: those
+---items are in another player's hands.
+---@param name string
+---@return table[] stacks What was in it.
+function game.break_container(name) end
+
+---Registers an inventory view: a place stacks may sit, given to every player.
+---Registration window only.
+---
+---**What a slot MEANS is yours; where it is is the engine's.** An armour rack,
+---a tool belt, a bandolier — the engine has no idea what any of those are, and
+---it does not need one. It gives the view a name and a fixed number of slots,
+---moves stacks between them, sends them to the client, and asks no questions
+---about which slot is a helmet.
+---
+---`id` is namespaced with your mod id, like every other id. The size is FIXED,
+---unlike `player:main`, which grows: four slots is the point of an armour rack,
+---and a fifth appearing because something was shoved in would be a rack that is
+---no longer four. Between 1 and 256 — every slot of every view is sent to a
+---client whenever any of them changes.
+---
+---Draw it with an `item_grid` widget naming the view, and read or write it with
+---`game.inventory(player, view)`, `game.give` and `game.take`.
+---
+---```lua
+---game.register_view{ id = "worn", slots = 4 }   --> "core_armour:worn"
+---```
+---@param spec { id: string, slots: integer }
+function game.register_view(spec) end
+
+---Registers an ITEM: something a player can carry and cannot build with.
+---Registration window only. Returns its numeric material id.
+---
+---**An item IS a material.** Everything a player can carry is one id in one
+---table — a stack is a material, a quantity in units and a cut (charter rule 5)
+---— and that is what inventories, the wire, the icons and the world's own
+---string↔numeric table are built on. A sword takes an id from the same counter
+---a stone does, sits in the same slots, draws from the same atlas, and stacks by
+---the same rule.
+---
+---The one thing that differs is that it may **not be placed in the world**. Try
+---and the server refuses it and says so; the client does not even ask.
+---
+---An item therefore has no `hardness`, no `drops`, no `dominance` and no
+---`light_emit`, and passing one is an error rather than being ignored — it is
+---never in the world, so there is nothing for any of them to mean.
+---
+---What it DOES is yours. The engine has no idea what a sword is: use
+---`game.held(player)` to see what somebody is pointing with, `game.register_on_punch`
+---to act when they hit something, `game.register_view` for somewhere to wear it,
+---and `game.storage` for anything it should remember.
+---
+---```lua
+---local sword = game.register_item{
+---    id = "sword",
+---    name = "Iron Sword",
+---    texture = "items/sword.png",
+---}
+---```
+---@param spec { id: string, name?: string, texture?: string, description?: string }
+---@return integer material_id
+function game.register_item(spec) end
+
+---Registers a world generation callback.
+---
+---**Registration window only.**
+---@param callback fun(buf: Tiamot.ChunkBuffer, pos: Tiamot.ChunkPos)
+function game.register_on_generate(callback) end
+
+---Called when somebody leaves. **Registration window only.**
+---
+---The other half of `register_on_player_join`, and a mod needs both: anything
+---kept per player — a party, a claim, a timer, a bar you were drawing — is
+---bookkeeping you could start and never end.
+---
+---It runs from the tick that noticed, after any container that player had open
+---has been put back and **before their inventory is written**, so a mod that
+---wants to drop what they were carrying can still read and empty it with
+---`game.inventory` and `game.take`.
+---
+---It fires for a dropped connection as well as a clean goodbye: the tick
+---compares who is present against who was. Somebody who arrives and goes inside
+---one tick produces neither event — the two are the same diff, so you are never
+---told about a departure you did not hear the arrival of.
+---
+---`player` is the UUID and is the identity; `name` is what they were called
+---(charter rule 13).
+---@param callback fun(event: { player: string, name: string })
+function game.register_on_player_leave(callback) end
+
+---Registers what happens before a body leaves a simulation space.
+---**Registration window only.**
+---
+---Return `false` to refuse the move. Unlike `on_player_join` and
+---`on_player_leave`, which report something that has already happened, this is
+---asked BEFORE anything moves — so `false` has something to stop. A mod that
+---owns a space is the only thing that can know whether leaving it is allowed:
+---a ship in flight, a room that has to be unlocked from the inside.
+---
+---The event carries `entity`, `from` and `to`. Both ends, so you can see where
+---something went without keeping your own record of where everything was — a
+---record you would have to rebuild after every restart.
+---
+---A handler that returns nothing allows the move. Registering this to WATCH
+---moves must not stop them by omission.
+---@param callback fun(event: { entity: integer, from: string, to: string }): boolean?
+function game.register_on_domain_exit(callback) end
+
+---Registers what happens before a body enters a simulation space.
+---**Registration window only.**
+---
+---The same as `game.register_on_domain_exit`, at the other end of the move,
+---and it runs only if the exit hooks allowed it — so you never see an arrival
+---that the departure already refused.
+---@param callback fun(event: { entity: integer, from: string, to: string }): boolean?
+function game.register_on_domain_enter(callback) end
+
+---Registers what happens when a block of yours gets a turn.
+---**Registration window only.**
+---
+---**This is the mechanism behind everything that happens on its own**: a crop
+---growing, grass spreading onto bare earth, a sapling becoming a tree, leaves
+---decaying, fire going out, ice melting. None of them is a thing a player did,
+---and none can be driven from a list you keep yourself, because the blocks that
+---need it were mostly made by worldgen and never passed through a hook.
+---
+---The engine picks blocks at random from the chunks it has loaded and offers
+---them to whoever registered that material. **Nothing happens for a material
+---nobody asked about**, so a world full of stone costs nothing.
+---
+---Three blocks of each chunk per tick, out of 4,096 — so any one block comes up
+---about every twenty minutes at 20 Hz. That is deliberately rare: what makes a
+---crop take a while is how seldom its block comes up, and a handler that wants
+---something faster keeps its own count.
+---
+---Which blocks are chosen is deterministic (charter rule 4): the same world at
+---the same tick offers the same blocks on every machine.
+---
+---One handler per material. A second registration for the same one is an error
+---at load rather than a silent replacement.
+---
+---```lua
+---local seed = game.register_block{ id = "seed" }
+---game.register_random_tick(seed, function(event)
+---    -- event.x, event.y, event.z, event.material
+---    if game.get_light({ x = event.x, y = event.y + 1, z = event.z }).sun > 8 then
+---        game.set_block({ x = event.x, y = event.y, z = event.z }, "core_plants:wheat")
+---    end
+---end)
+---```
+---@param material string|integer The block id, or its numeric material id.
+---@param callback fun(event: { x: integer, y: integer, z: integer, material: integer })
+function game.register_random_tick(material, callback) end
+
+---Registers a per-tick callback.
+---
+---**Registration window only.**
+---
+---Runs once per simulation tick, at 20 Hz. `dt_ticks` is how many simulation
+---steps this call covers — normally 1, but more when the server has fallen
+---behind and is catching up.
+---
+---It is a **count of steps, not a duration**, and deliberately so: scaling
+---behaviour by wall-clock time would make your mod produce different results on
+---a fast machine than a slow one, and two servers running the same world would
+---drift apart.
+---
+---If your callback raises an error, your mod is disabled for the rest of the
+---session and every other mod carries on. Nothing you do here can stop the
+---server's tick.
+---@param callback fun(dt_ticks: integer)
+function game.register_on_tick(callback) end
+
+---What a block holds, right now.
+---
+---**The question every world-aware mod starts with.** A chest, a furnace, a
+---crop, a door, a wire: each of them begins with "what is at this position",
+---and until this existed a mod could write a block and never read one back.
+---
+---`nil` means the engine could not say — the chunk is not loaded, or you asked
+---from `register_on_generate`, where there is no world yet. **Air is not nil**:
+---empty space answers `{ material = game.AIR, occupancy = 0 }`. A mod that
+---could not tell those apart would eventually build into terrain that was
+---merely unloaded, and the mistake would be a hole in somebody's house rather
+---than an error anybody could catch.
+---
+---The chunk is never GENERATED to answer. A mod asking about somewhere far
+---away must not be able to make the server generate a chunk inside the tick
+---budget, one call at a time, for nobody standing there.
+---
+---`occupancy` is the 27-bit mask indexed `x + 3*y + 9*z`, the same convention
+---the shape editor and `on_place` use. A whole block is `game.OCCUPANCY_FULL`.
+---
+---`cells` is present ONLY when the block holds more than one material, and is
+---then 27 entries in that same index order. It is left out otherwise because a
+---twenty-seven entry table on every call is a cost paid by every mod scanning a
+---region for the one block in a thousand that is mixed.
+---
+---```lua
+---local at = game.get_block{ x = 4, y = 12, z = -7 }
+---if at and at.material == game.get_block_id("core_blocks:stone")
+---    and at.occupancy == game.OCCUPANCY_FULL then
+---    -- a whole block of stone
+---end
+---
+----- One cell of it, whichever form it came back in:
+---local function cell_at(at, index)          -- index is 0..26
+---    if at == nil then return nil end
+---    if at.cells then return at.cells[index + 1] end
+---    if at.occupancy & (1 << index) ~= 0 then return at.material end
+---    return game.AIR
+---end
+---```
+---@param position Tiamot.BlockPos
+---@return { material: integer|nil, occupancy: integer, cells: integer[]|nil }|nil
+---
+---**Every position may name a domain.** `{ x, y, z, domain = "mod:ship/17" }`
+---asks about that space; leaving `domain` out asks about the overworld, which
+---is what every mod written before domains existed meant. The same field works
+---on `game.set_block`, `game.get_light`, `game.get_fluid`, `game.set_fluid`,
+---`game.line_of_sight`, `game.find_path` and `game.steer_entity` — a position
+---names a place only with a space to be in, because every domain has a block at
+---each coordinate.
+function game.get_block(position) end
+
+---The light at a block, right now.
+---
+---**Frozen phase only** — there is no world during registration, and asking
+---then answers darkness rather than failing.
+---
+---Levels are 0..15 per channel, the same range `register_block{ light_emit }`
+---takes, so a level read here can be written straight back into an emitter.
+---`sun` is separate from the colour channels because it behaves differently:
+---the engine stores full daylight and scales it by time of day when it draws,
+---so a value of 15 means "open sky", not "bright right now". A mod deciding
+---whether it is dark enough for something to spawn wants `sun` and the colour
+---channels both.
+---
+---Coordinates are BLOCKS. A dig event gives you cells — divide by three.
+---
+---Somewhere unloaded answers darkness, which is the honest answer for a place
+---nobody is: an error would push that judgement onto every caller.
+---
+---```lua
+---local here = game.get_light{ x = 10, y = 64, z = -3 }
+---if here.sun == 0 and here.r + here.g + here.b < 4 then
+---    -- dark enough for something unpleasant
+---end
+---```
+---@param position { x: integer, y: integer, z: integer }
+---@return { sun: integer, r: integer, g: integer, b: integer }
+function game.get_light(position) end
+
+---Whether one point in the world can see another.
+---
+---**Positions are POINTS, not bodies.** This is a single line between two
+---coordinates. If you mean "can this mob see that one", raise both ends to eye
+---height yourself — a line drawn between two sets of feet clips the floor they
+---are both standing on, and the engine has no idea where your mob keeps its
+---eyes.
+---
+---Coordinates are world BLOCKS, as plain floats, the same as
+---`game.spawn_entity` and `game.entity` speak. Fractions are kept: the test
+---runs at sub-node resolution, so half a block matters and is not rounded away.
+---
+---Three answers, and the third is not a kind of `false`:
+---
+---* `true` — nothing solid stands between them.
+---* `false` — something does; or they are more than 64 blocks apart; or the
+---  line crosses terrain the server has not loaded. All three are "no" to what
+---  you were really asking, and unloaded terrain reads as solid everywhere else
+---  in the engine too.
+---* `nil` — the engine had no world to look through at that moment. This
+---  happens in `register_on_generate` (you are *making* the chunk you would be
+---  asking about) and in a test with no server. **It is not "I could not see
+---  it"** — a mob that stops following because it got `nil` looks exactly like
+---  a mob that lost sight of you, and the two have completely different fixes.
+---  Lua treats `nil` as false in a condition, so ignoring the difference is
+---  safe; the distinction is there for when you are debugging.
+---
+---Available from `register_on_tick` and from an entity's step callback, which
+---is where perception belongs. The cost is cells walked, so it is cheap over
+---short distances and capped at 64 blocks.
+---
+---```lua
+---local me = game.entity(id)
+---local eye = { x = me.pos.x, y = me.pos.y + 1.5, z = me.pos.z }
+---if game.line_of_sight(eye, { x = target.x, y = target.y + 1.5, z = target.z }) then
+---    -- it is in view
+---end
+---```
+---@param from { x: number, y: number, z: number }
+---@param to { x: number, y: number, z: number }
+---@return boolean|nil visible `true` clear, `false` blocked, `nil` no world to look through
+function game.line_of_sight(from, to) end
+
+---Options for `game.find_path`. Every field is optional; the defaults describe
+---something humanoid.
+---@class Tiamot.PathOptions
+---@field budget? integer Blocks the search may expand before giving up. Default 2000, capped at 10000, and 0 means the default. A search is unbounded work wearing the shape of a function call, and this is what bounds it. **There is also a pool of 8000 expansions shared by every search in one tick**, so what you ask for is capped by what the tick has left — measured, 2000 expansions is about 0.5 ms, or 1% of a tick, and the whole pool is about 4%. A mob that cannot find a way in two thousand blocks should do something else, not stall the server.
+---@field height? integer Blocks of clear space the body needs above its feet. Default 2. Not read off the entity's collider on purpose: you may want a mob to route only where it would also fit crouching, or to reserve headroom it does not strictly need.
+---@field step_up? integer How far it climbs in one move, in blocks. Default 1. Zero for something that cannot climb at all.
+---@field max_drop? integer How far it will fall in one move, in blocks. Default 3. Nothing here knows about fall damage — that is your rule, not the engine's — so this is only how far the search is willing to route.
+
+---Called when a player arrives in the world.
+---
+---**The engine does not tell you whether this is their first time**, and that
+---is deliberate. "First-ever join" is a rule you invent — a mob that imprints on
+---one, a tutorial that greets one, a shop that gives one a starting stack — and
+---every one of them wants a different definition of first. Remember it yourself
+---with `game.storage`, keyed on the UUID.
+---
+---`player` is the UUID and is the identity. `name` is what they are currently
+---called on this server, which is a claim bound to that UUID and can be rebound
+---(charter rule 13) — store the UUID, print the name.
+---
+---Runs on the simulation thread inside the tick, before that player's first
+---tick, so `game.spawn_entity`, `game.line_of_sight` and the rest all work here.
+---
+---```lua
+---game.register_on_player_join(function(event)
+---    if not game.storage.get("imprint") then
+---        game.storage.set("imprint", event.player)
+---    end
+---end)
+---```
+---@param callback fun(event: { player: string, name: string })
+function game.register_on_player_join(callback) end
+
+---Called when a player presses or releases one of YOUR registered actions.
+---
+---Charter rule 11: you are told WHAT was done, never which key did it. There is
+---no key in the event and there is not going to be — a mod that branched on the
+---key would make rebinding change behaviour rather than just controls.
+---
+---Both edges arrive, so a "hold to..." control is written by watching
+---`pressed`. Only actions YOUR server registered arrive; the engine's own
+---controls (moving, digging, placing) are not actions and never appear here.
+---
+---Runs on the simulation thread inside the tick, before the entity step, so a
+---mod that flips a mode here sees it while stepping its own mobs.
+---
+---```lua
+---game.register_on_action(function(event)
+---    if event.id == "my_mod:shout" and event.pressed then
+---        game.log(event.player .. " shouted")
+---    end
+---end)
+---```
+---@param callback fun(event: { player: string, id: string, pressed: boolean })
+function game.register_on_action(callback) end
+
+---The tool a player is holding, or nil for a bare hand.
+---
+---Takes a player UUID in hex, the way a hook event reports one (charter rule
+---13): key on the UUID, never the display name.
+---
+---Answers nil during worldgen, when nobody is holding anything yet.
+---@param player string
+---@return string? tool The qualified tool id, e.g. "core_tools:chisel".
+function game.get_tool(player) end
+
+---Puts a tool in a player's hand. `nil` is a bare hand.
+---
+---A tool decides what a dig REMOVES and what a placement WRITES, so this is how
+---a mod builds a control that changes how digging behaves. If you swap somebody
+---to another tool for the duration of a key, read `game.get_tool` first and put
+---back what was there — assuming a bare hand takes the tool off anyone who had
+---chosen one.
+---
+---Returns false for a tool nobody registered, or a player who is not connected;
+---an unresolvable tool would be a dig that silently never progresses.
+---@param player string
+---@param tool string? The qualified tool id, or nil for a bare hand.
+---@return boolean took
+function game.set_tool(player, tool) end
+
+---What a player is carrying in one of their views.
+---
+---Consolidated: one entry per material AND cut, so ten stairs in three slots
+---are one entry of thirty items. The default view is `"player:main"`, the
+---player's own bag; `"player:hotbar"` is the other one every player has.
+---
+---Each entry is `{ material = <numeric id>, units = , blocks = , nodes = ,
+---count = , shape = }`. `units` is charter rule 5's own quantity, `blocks` and
+---`nodes` are that split for display, `count` is how many ITEMS — whole blocks
+---of loose material, or items of the cut. `shape` is the 27-bit occupancy mask
+---of a cut and is nil for loose material, so `if entry.shape then` is the test
+---for "is this a shaped stack".
+---
+---Answers an empty list during worldgen, when nobody is carrying anything yet.
+---@param player string A player UUID in hex, as a hook event reports one.
+---@param view string? Which view. Defaults to "player:main".
+---Each stack reports `{ material, units, blocks, nodes, count, shape, detail }`.
+---`detail` is your own word for which item it is, absent when nothing said one —
+---see `game.give`.
+---@return table[] stacks
+function game.inventory(player, view) end
+
+---Puts material into a player's inventory.
+---
+---**This and `game.take` are what make crafting expressible.** The engine holds
+---no recipes: turning twenty-seven units of stone into three stairs is a mod
+---taking the stone and giving back the stairs, and the engine's only job is to
+---make both halves possible and to conserve units across them (charter rule 5).
+---
+---The spec is `{ material = , units = | count = , shape = , view = }`.
+---`material` is a block id like `"core:stone"` or a numeric material id.
+---Quantity is either `units` — raw units — or `count`, which is items and is
+---multiplied by what one costs: 27 units for loose material, or the number of
+---cells in `shape` for a cut. `shape` is a 27-bit occupancy mask over the
+---block's sub-nodes, indexed `x + 3*y + 9*z`; leave it out for loose material.
+---
+---`detail` is YOUR OWN word for which item this is, and the engine never looks
+---inside it. **Without it, two swords are one sword**: stacks merge on being the
+---same thing, and being the same thing was material and cut — so one sword worn
+---to eleven and another worn to four became one stack of two swords. Set a
+---`detail` and they stay apart; leave it out and they stack as before.
+---
+---It is carried WITH the stack rather than being an id into a table of your own,
+---so there is no lifetime to get wrong: a stack that ceases to exist takes its
+---detail with it. Up to 256 bytes, refused rather than truncated. It survives
+---the save, the wire, being dropped on the ground and being picked back up.
+---
+---```lua
+---game.give(uuid, { material = "core_tools:sword", count = 1, detail = "wear=0" })
+---```
+---
+---Two stacks stack only if they are the same material AND the same shape AND the
+---same detail, so giving somebody a cut never merges it into the rubble they were
+---carrying, and giving them a named block never merges it into their plain ones.
+---
+---Returns false for a player who is not connected, or for a quantity of zero.
+---An inventory never refuses for lack of room — it grows.
+---@param player string A player UUID in hex.
+---@param spec { material: string|integer, units: integer?, count: integer?, shape: integer?, detail: string?, view: string? }
+---@return boolean gave
+function game.give(player, spec) end
+
+---What a player is holding: the stack in the hotbar slot they have selected.
+---
+---Returns nil for a player who is not connected or an empty slot, which are the
+---same answer to "what is in your hand".
+---
+---**This is what makes an item worth registering.** `game.inventory` says what
+---somebody OWNS; this says what they are pointing with, which is the difference
+---between a rucksack and a weapon. The slot is the client's own UI state and
+---reaches the server when it changes.
+---
+---The table is the same shape `game.inventory` reports a stack in:
+---`{ material, units, blocks, nodes, count, shape }`.
+---@param player string A player UUID in hex.
+---@return table|nil held
+function game.held(player) end
+
+---The heading of a direction across the ground, in radians.
+---
+---**The inverse of the `facing` `game.entity` reports, and the reason is charter
+---rule 4.** Lua's `math.atan` is the platform's libm, and a mod runs inside the
+---tick — so two servers running the same mod would compute slightly different
+---yaws, and a yaw is persisted entity state. This comes from a committed table
+---and is the same number on every machine.
+---
+---Arguments are a direction across the ground, `dx` then `dz`, in this engine's
+---world axes where `+z` is north. The result is in `-pi..=pi` and can be written
+---straight into `game.set_entity{ yaw = ... }`.
+---
+---A direction of no length answers `0`, because a vector pointing nowhere has no
+---heading and the simulation may not produce a NaN (charter rule 4).
+---
+---```lua
+---local to = { x = target.pos.x - me.pos.x, z = target.pos.z - me.pos.z }
+---game.set_entity(id, { yaw = game.heading(to.x, to.z) })
+---```
+---@param dx number
+---@param dz number
+---@return number radians
+function game.heading(dx, dz) end
+
+---Takes material out of a player's inventory.
+---
+---The same spec as `game.give`, and the same defaults. **Returns how many
+---UNITS it actually got**, which may be fewer than asked for — a mod that
+---cannot complete a recipe can give back exactly what it took rather than
+---having to ask twice how much that was.
+---
+---The cut is part of what is being spent: taking loose stone will not empty the
+---stairs the player crafted out of it, and taking stairs will not drain their
+---rubble. **So is the `detail`, matched EXACTLY**, with no detail meaning a plain
+---stack — a recipe asking for stone must not melt down the named sword somebody
+---left in the same view. A mod that does want any of them reads `game.inventory`,
+---which reports each stack's detail, and asks for the ones it wants by name.
+---@param player string A player UUID in hex.
+---@param spec { material: string|integer, units: integer?, count: integer?, shape: integer?, detail: string?, view: string? }
+---@return integer units How many units were removed.
+function game.take(player, spec) end
+
+---Called when a player says something in chat.
+---
+---**A veto.** Returning `false` stops the line reaching anybody, and returning
+---a string stops it and tells the speaker why. That is what makes a chat filter
+---expressible. The first refusal wins, so a later mod is not invited to act on
+---a message that is not going to be sent.
+---
+---Chat itself is ENGINE-native and works with no mods loaded, because
+---moderation and RCON depend on it: an operator must be able to read and stop
+---what is said without every server having installed the same mod. What may be
+---said is policy, and policy is yours (charter rule 1).
+---
+---`player` is the UUID and is the identity — store the UUID, print the name
+---(charter rule 13).
+---
+---```lua
+---game.register_on_chat(function(event)
+---    if event.text:find("spoiler") then
+---        return "not in this world, thank you"
+---    end
+---end)
+---```
+---@param callback fun(event: { player: string, text: string }): boolean|string|nil
+function game.register_on_chat(callback) end
+
+---Fields accepted by `game.register_sound`.
+---@class Tiamot.SoundSpec
+---@field id string Required. Namespaced with your mod id automatically.
+---@field file string Required. Path inside your mod directory, e.g. "sounds/break.ogg". Ogg Vorbis or WAV — see the limits below.
+---@field gain number? Loudness multiplier on the file's own level. Default 1.
+---@field pitch_variance number? How much to vary the pitch each play, as a fraction. Default 0, which makes a repeated sound machine-like.
+
+---One widget in a dialog tree.
+---
+---`type` decides which other fields are read; an unknown type or an unknown
+---field is an error naming it, rather than something a client is asked to make
+---sense of. Nesting is through `children`, and is limited to 32 deep.
+---
+---Types: `container`, `label`, `button`, `image`, `text_input`, `checkbox`,
+---`slider`, `dropdown`, `item_slot`, `item_grid`, `scroll`, `spacer`,
+---`progress`, `shape_editor`.
+---@class Tiamot.Widget
+---@field type string Required. One of the types above.
+---@field name string? What events from this widget carry, so you can tell two buttons apart.
+---@field children Tiamot.Widget[]? Only for `container` and `scroll`.
+---@field style Tiamot.WidgetStyle?
+---@field grow integer? Share of the parent's leftover space. 0 takes only what it needs.
+---@field size integer? Fixed size along the parent's direction, in virtual pixels.
+---@field cross_size integer? Fixed size across it.
+---@field direction string? `container`: "row" or "column". Default "column".
+---@field gap integer? `container`: space between children.
+---@field padding integer? `container`: space inside its own edges.
+---@field align string? `container`: "start", "center", "end" or "stretch".
+---@field text string? `label`, `button`, `checkbox`.
+---@field hash integer[]? `image`: 32 bytes of content hash.
+---@field initial string? `text_input`: what is in it to begin with.
+---@field placeholder string? `text_input`: shown when empty.
+---@field checked boolean? `checkbox`.
+---@field min integer? `slider`.
+---@field max integer? `slider`.
+---@field value integer? `slider`.
+---@field options string[]? `dropdown`.
+---@field selected integer? `dropdown`: which option, one-based.
+---@field view string? `item_slot`, `item_grid`: which inventory view.
+---@field index integer? `item_slot`: which slot, one-based.
+---@field columns integer? `item_grid`: slots per row.
+---@field first integer? `item_grid`: the first slot shown, one-based.
+---@field count integer? `item_grid`: how many slots.
+---@field permille integer? `progress`: how full, 0 to 1000.
+---@field shape integer? `shape_editor`: the 27-bit occupancy mask, indexed `x + 3*y + 9*z`. Defaults to a whole block.
+---@field material integer? `shape_editor`: which material the cells are drawn as.
+
+---What a widget may say about how it looks. Deliberately small.
+---@class Tiamot.WidgetStyle
+---@field background integer[]? `{r, g, b}` or `{r, g, b, a}`.
+---@field border integer[]? Same shape. The width is the client's.
+---@field nine_slice integer[]? 32 bytes of content hash, stretched around the widget.
+---@field text_colour integer[]? Same shape as `background`.
+---@field text_size integer? In virtual pixels; the client keeps it legible.
+
+---Fields accepted by `game.show_dialog` and `game.update_dialog`.
+---@class Tiamot.DialogSpec
+---@field player string Required. The player's UUID — never their display name (charter rule 13).
+---@field form string Required. Your name for this dialog, namespaced with your mod id automatically.
+---@field tree Tiamot.Widget Required. The root widget.
+---@field compact boolean? Draw it as a small prompt sized to its contents rather than as a full screen. Default `false`.
+
+---Shows a dialog on a player's screen.
+---
+---**No code crosses the wire.** The tree is data; the client renders it and
+---executes nothing. That is why the widget set is fixed and why an unknown type
+---is an error here rather than something the client has to refuse.
+---
+---The dialog belongs to you: only your mod is told about its events, so no
+---other mod can watch what a player types into your text field or act on your
+---buttons. That is also why `form` is namespaced — two mods may both use
+---"inventory" without colliding.
+---
+---**Your dialog is drawn as a full screen unless you say otherwise.** Every
+---screen the game puts in front of a player is the same centred shape, because
+---a player reads them as one interface rather than as one per mod. The engine
+---cannot tell a two-button prompt from an inventory by looking at the tree, so
+---set `compact = true` when you built a prompt, and it is measured and drawn
+---small. Pass it on `update_dialog` too: it travels with the tree, so a redraw
+---cannot change the shape of the window a player is already reading.
+---
+---Returns whether the player was there to show it to, which is NOT a promise it
+---rendered.
+---@param spec Tiamot.DialogSpec
+---@return boolean shown
+function game.show_dialog(spec) end
+
+---Replaces the contents of a dialog already open.
+---
+---A whole tree, not a patch: a dialog is small, and a patch stream that ever
+---dropped a message would leave a player looking at something you do not
+---believe is there.
+---@param spec Tiamot.DialogSpec
+---@return boolean shown
+function game.update_dialog(spec) end
+
+---Closes a dialog you opened.
+---@param spec { player: string, form: string }
+---@return boolean closed
+function game.close_dialog(spec) end
+
+---# The shape editor
+---
+---`{ type = "shape_editor", shape = <mask>, material = <id> }` draws a block as
+---twenty-seven cells and lets the player chisel it. Left-click takes off the
+---nearest cell, right-click puts one back against the face that was clicked —
+---the same gesture as digging and placing, because a player already knows it.
+---
+---Every change reports `"chiselled"` with the WHOLE mask. The client draws its
+---own copy so a click lands immediately, and adopts yours again whenever you
+---send a tree with a different `shape` — so a "reset" button is just
+---`game.update_dialog` with the mask you want.
+---
+---The mask may be empty or full, which a `game.give` shape may not be: a whole
+---block is where chiselling starts, an empty one is where it can end up, and
+---deciding what either means is yours. `shape` counts its own cells, so an item
+---of that cut costs that many units.
+---
+---Called when a player does something in one of YOUR dialogs.
+---
+---Only your own: a dialog's events are private to the mod that opened it.
+---
+---`event.kind` says what the player did, and which other fields are set:
+---
+---  - `"pressed"` — `name`
+---  - `"submitted"` — `name`, `text`
+---  - `"toggled"` — `name`, `checked`
+---  - `"slid"` — `name`, `value`
+---  - `"chose"` — `name`, `index` (one-based)
+---  - `"clicked"` — `view`, `index` (one-based), `click` ("left", "right", "shift_left")
+---  - `"chiselled"` — `name`, `shape` (the whole 27-bit mask)
+---  - `"closed"` — nothing else
+---
+---**Every one is a REQUEST, never a result.** A slot click says what the player
+---did with the mouse; whether any item moves is the server's decision, taken
+---against its own inventory. A client saying "I moved this" does not make it so.
+---@param callback fun(event: { player: string, form: string, kind: string, name: string?, text: string?, checked: boolean?, value: integer?, index: integer?, view: string?, click: string?, shape: integer? })
+function game.register_on_dialog_event(callback) end
+
+---Registers a sound. Registration window only.
+---
+---The file travels to clients by hash, through the same content pipeline a
+---block texture uses — you ship the file in your mod directory and the engine
+---does the rest. Two mods shipping byte-identical files send those bytes once.
+---
+---**Formats: Ogg Vorbis or WAV, and prefer Ogg.** A client decodes files from
+---servers it has no reason to trust, so the WAV path refuses anything whose
+---structure has more than one reading: exactly one `fmt ` chunk, a RIFF size
+---that matches the file, and chunks that account for it exactly. A WAV straight
+---out of an encoder passes; one carrying trailing editor metadata may not.
+---
+---**Limits, all checked before anything is allocated:** 4 MiB per file, at most
+---8 channels, at most 192 kHz, and at most a minute at 48 kHz. Anything longer
+---is music, which wants streaming rather than a decoded buffer, and streaming
+---does not exist yet.
+---
+---A file that is missing, oversized or malformed disables that ONE sound, with
+---a warning naming the server. It never refuses the join and never stops the
+---client.
+---@param spec Tiamot.SoundSpec
+function game.register_sound(spec) end
+
+---Binds a sound to a named event. Registration window only.
+---
+---**This is the standard way to give anything a noise.** `register_sound` says
+---a file exists; this says *when it plays*. Keeping them apart is what makes
+---sound a system rather than a habit: the engine and every mod raise named
+---**cues**, and any mod binds any sound to any cue without either side knowing
+---the other exists.
+---
+---A cue you write unqualified becomes your own. A qualified one is taken as
+---written, which is deliberate — binding to another mod's cue is how you
+---re-skin its doors without touching its code.
+---
+---```lua
+----- Your own events.
+---game.bind_sound("door_open", "creak")
+---
+----- The engine's. These are the player's OWN actions, and the client plays
+----- them without waiting for the server, because a sound of something you did
+----- arriving 80 ms late reads as a worse sound rather than as latency.
+---game.bind_sound("engine:jump", "grunt")
+---game.bind_sound("engine:land", "thud")
+---game.bind_sound("engine:ui_click", "click")
+---game.bind_sound("engine:ui_close", "click")
+---```
+---
+---A cue nobody bound is silence, never an error. Raise your cues whether or not
+---anybody has given them a noise; a sound pack is something somebody adds later.
+---@param cue string The event. Unqualified means your own.
+---@param sound string The sound id. Unqualified means your own.
+function game.bind_sound(cue, sound) end
+
+---Raises a cue, playing whatever is bound to it.
+---
+---The same delivery `game.play_sound` has — a radius, and only the players
+---inside it are told — with the sound chosen by the binding table instead of by
+---you. Returns how many players were told, which is 0 when nothing is bound.
+---
+---You may **not** raise an `engine:` cue. Those mean "this player just did
+---this", and the client trusts them without asking anybody.
+---
+---```lua
+---game.cue{ cue = "door_open", pos = pos, radius = 12 }
+---```
+---@param spec { cue: string, pos: { x: number, y: number, z: number }, radius?: number, gain?: number, entity?: integer }
+---@return integer told
+function game.cue(spec) end
+
+---Starts a looping sound. Returns how many players were told.
+---
+---**Ambience is a loop, not a repeated clip.** Day, night, weather, the inside
+---of a cave, a river ten blocks away — none of these are events, and playing a
+---clip over and over means guessing its length and hearing every seam.
+---
+---`everywhere = true` is what makes ambience expressible: no position, no
+---panning, full gain wherever the player stands. Without it the loop sits at
+---`pos` and attenuates over `radius` like anything else.
+---
+---**Starting a loop that is already running replaces it**, so the natural thing
+---to write — making sure the night loop is on, every tick — does not end up
+---with a tick's worth of overlapping copies.
+---
+---```lua
+---game.register_on_tick(function()
+---    if game.time_of_day() > 0.75 then
+---        game.play_loop{ id = "night", sound = "crickets", everywhere = true, gain = 0.6 }
+---    else
+---        game.stop_loop("night")
+---    end
+---end)
+---```
+---@param spec { id: string, sound: string, pos?: { x: number, y: number, z: number }, radius?: number, gain?: number, everywhere?: boolean }
+---@return integer told
+function game.play_loop(spec) end
+
+---Walks an entity one tick toward a place, jumping over what is in the way.
+---
+---**The missing half of pathfinding.** `game.find_path` says which blocks to
+---visit; this turns "the next waypoint is over there" into the drive a body
+---actually takes — including whether to jump, which needs a look at the block in
+---front of the mob's feet and is therefore the engine's job rather than yours.
+---
+---A mob that walks into a one-block step climbs it. Call it every tick with
+---wherever you want the mob to go — the next waypoint of a route, or the player
+---it is following.
+---
+---```lua
+---game.register_on_tick(function()
+---    for _, id in ipairs(game.entities_in_radius(home, 64, "mymod")) do
+---        local target = whoever_it_is_chasing(id)
+---        if target and not game.steer_entity(id, target.pos) then
+---            -- Arrived. Do whatever arriving means.
+---        end
+---    end
+---end)
+---```
+---
+---Returns `true` while it is still going, `false` once it has arrived, and `nil`
+---if the entity is gone or the world could not be looked at this tick — so a
+---plain `if not game.steer_entity(...)` treats "arrived" and "could not ask" the
+---same way, which is usually what you want.
+---
+---Sets the entity's `drive`, so anything you set yourself in the same tick is
+---overwritten. Steer or drive; not both.
+---`gait` takes the same three names `set_entity`'s drive does — `"walk"`,
+---`"sprint"`, `"sneak"` — and an unrecognised one walks, because a typo in a
+---gait should not stop a mob dead.
+---@param id integer
+---@param target { x: number, y: number, z: number }
+---@param gait "walk"|"sprint"|"sneak"|nil
+---@return boolean|nil going
+function game.steer_entity(id, target, gait) end
+
+---Where the day stands: 0 at midnight, 0.5 at noon, wrapping at 1.
+---
+---The same number the sky is drawn from, so a mod crossfading night ambience
+---into day is working from what the player can see. `0.0` in a world whose mods
+---registered no sky, which is a world with no day rather than an error.
+---@return number time
+function game.time_of_day() end
+
+---Stops a looping sound by the id you gave it. Returns how many were told.
+---
+---Stopping one that is not running is not an error, so tidying up on shutdown
+---does not mean remembering what you started.
+---@param id string
+---@return integer told
+function game.stop_loop(id) end
+
+---Sets what YOUR HUD script should show one player. Returns whether they are here.
+---
+---**The engine has no health bar, no hunger bar and no experience bar, and
+---should not** — what any of those mean is yours (charter rule 1). But a mod
+---that could compute one and not draw it could not finish the job, so this is
+---the channel: you set values per player, and your own HUD script sees them as
+---`state.values`. No other mod's script can read them, and you cannot read
+---another's.
+---
+---**Replaces your whole set for that player**, rather than merging, because a
+---mod computes what it wants shown and says so — merging makes "this value is
+---gone now" impossible to express. Nothing goes over the network when the values
+---have not changed, so setting the same health every tick costs nothing.
+---
+---Values are numbers, strings and booleans. Anything else is refused rather than
+---coerced, and so is a number that is not one: a value quietly changed gives you
+---a HUD that disagrees with your own arithmetic. At most 32 values, names up to
+---32 bytes, strings up to 64 — a HUD line, not a document.
+---
+---They are forgotten when the player leaves, because it is your mod that knows
+---what they should say when they come back.
+---
+---```lua
+----- Server side, from your tick or a damage hook:
+---game.set_hud(uuid, { health = hp, max_health = 20, poisoned = poison > 0 })
+---
+----- And in your HUD script:
+---hud.on_draw(function(state)
+---    local hp = state.values.health
+---    if hp then
+---        hud.rect(8, 8, hp * 6, 8, { r = 200, g = 40, b = 40 })
+---    end
+---end)
+---```
+---@param player string The player's UUID, in hex.
+---@param values table<string, number|string|boolean>
+---@return boolean shown
+function game.set_hud(player, values) end
+
+---Registers a HUD script this mod wants clients to run. Registration window only.
+---
+---**This is the only thing your mod can send that RUNS on a player's machine**,
+---and the rules are correspondingly tight. Everything else — dialogs, sounds,
+---textures — is data a client interprets. A HUD is not expressible as data: a
+---health bar's length is a *function* of the health, and putting "a function of"
+---on the wire would mean inventing a worse language than Lua.
+---
+---The file travels by hash through the same content pipeline a texture uses.
+---Ship `hud.lua` in your mod directory and name it here. **One per mod, last
+---call wins** — the client budgets per script per frame, so two scripts from one
+---mod would quietly buy you twice a one-script mod's budget. Concatenate
+---instead.
+---
+---Inside the script you have `hud` and a small standard library, and **nothing
+---else**: no `os`, no `io`, no `require`, no `load`, no `coroutine`, no
+---filesystem, no network. This is an allow-list, not a deny-list — a future Lua
+---version cannot add a capability into it by existing.
+---
+---```lua
+---game.register_hud_script("hud.lua")
+---```
+---
+---and in `hud.lua`:
+---
+---```lua
+---hud.on_draw(function(state)
+---    hud.hide_builtin("crosshair")
+---    for index, slot in ipairs(state.carried) do
+---        hud.icon{ anchor = "bottom", x = (index - 1) * 56 - 224, y = 72, size = 48,
+---                  material = slot.material, shape = slot.shape }
+---        hud.text{ anchor = "bottom", x = (index - 1) * 56 - 224, y = 26,
+---                  text = slot.count or (slot.blocks .. "+" .. slot.nodes), size = 18 }
+---    end
+---end)
+---```
+---
+---**Your callback runs once a frame with a budget of about 200,000
+---instructions.** Go over it and that frame's drawing is discarded whole — a
+---half-drawn hotbar is worse than none — the player is shown a warning naming
+---your mod, and the script sits out twelve frames. Five strikes and it is
+---switched off for the session. Draw; do not compute.
+---
+---`state` is read-only and small on purpose: your own position, facing, time of
+---day, what you carry, what you are looking at, the dig in progress, the tool in
+---hand. It is not a way to read terrain the player cannot see.
+---
+---`state.carried` is the HOTBAR — the first `state.slots` slots of
+---`player:main`, in slot order, **with holes**. An empty slot is `nil` rather
+---than a missing entry, so slot four is slot four whether or not there is
+---anything in it: iterate `1, state.slots` and test each, because `ipairs`
+---stops at the first hole and `#` cannot measure past one.
+---
+---**A stack carries a `shape` and a `count`, and a cut is not loose material.**
+---`slot.shape` is the 27-bit occupancy each item is cut to, or nil for loose
+---material; passing it to `hud.icon` draws the cells rather than the block's
+---tile, which is the only thing that tells two stacks of one stone apart.
+---`slot.count` is how many of that cut it is, and is nil for loose material —
+---where `slot.blocks` and `slot.nodes` are the display instead. Labelling a
+---thirteen-cell stair `+13` tells a player they have thirteen of something.
+---
+---`state.offhand` is the twenty-eighth slot of the same view, or nil. It is
+---handed over separately because a HUD draws it somewhere else entirely; the
+---engine's `engine:offhand` key swaps it with whatever is selected.
+---
+---Chat and the settings screen are not in `hud.hide_builtin` and never will be —
+---moderation and rebinding have to work whatever a server pushes.
+---`state.values` is what YOUR mod sent this player with `game.set_hud`, and
+---nothing else — another mod's values are not reachable from here, the same way
+---its `game.storage` is not. **This is how a health bar gets its number.** The
+---engine has no health, hunger or experience of its own (charter rule 1); it
+---carries what you computed and reads none of it.
+---
+---@param file string Path to the Lua file inside your mod directory.
+function game.register_hud_script(file) end
+
+---Fields accepted by `game.play_sound`.
+---@class Tiamot.PlaySpec
+---@field sound string Required. A sound id; unqualified means your own.
+---@field pos { x: number, y: number, z: number } Required. Where it happens, in world blocks. Ignored when `entity` is set.
+---@field radius number? How far it carries, in blocks. Default 16, capped at 512. Players outside are not sent it at all.
+---@field gain number? Loudness multiplier on the sound's registered gain. Default 1.
+---@field entity integer? An entity to follow, if the sound should move with one.
+
+---Plays a sound for everyone close enough to hear it.
+---
+---Returns how many players were told — which is NOT a promise anybody heard
+---it: a client may have it muted, may still be fetching the file, or may have
+---refused it as a poisoned asset.
+---
+---A careless number is clamped rather than refused: `0/0` is a quiet NaN in Lua
+---and would otherwise reach a mixer.
+---@param spec Tiamot.PlaySpec
+---@return integer told
+function game.play_sound(spec) end
+
+---A walkable route between two points, or why there is not one.
+---
+---Navigation is **block resolution** and deliberately simple (Sub-Node Contract
+---§6): a block is walked through only if its bottom sub-node layer — the nine
+---cells at the floor — is empty. So a mob may fail to path through a gap you
+---could squeeze into. That is an accepted limitation, not a bug: sub-node
+---navigation would multiply the search by twenty-seven for very little.
+---
+---Returns an array of `{ x, y, z }` in world blocks, start first and goal last,
+---**horizontally centred** — a mob steers at a point, and the corner of a block
+---is not where anything walks. `y` is the block's floor, which is where feet go.
+---
+---On failure returns `nil` and a reason, and the reason matters:
+---
+---* `"unreachable"` — everything reachable was searched and the goal was not in
+---  it; or the goal is not somewhere this body could stand; or the ends are more
+---  than 192 blocks apart. Asking again will not help.
+---* `"budget"` — the search ran out first, either its own or the tick's shared
+---  pool. **Not the same thing as unreachable.** A nearer target, a bigger
+---  budget, or simply the next tick might succeed. A mob that treats this as
+---  "there is no way" gives up on somewhere it could have reached. Searching
+---  every tick is how you exhaust the pool and make it everyone's problem:
+---  repath when the target has moved, not because a tick went by.
+---* `"no world"` — asked when the engine had no world to search, which is
+---  `register_on_generate` and a test with no server. See `game.line_of_sight`.
+---
+---The goal must be somewhere the body could stand: floor underneath, headroom
+---above. A route into a wall or into mid-air is not a route.
+---
+---```lua
+---local route, why = game.find_path(here, there, { max_drop = 1 })
+---if route then
+---    steer_towards(route[2])          -- [1] is where you already are
+---elseif why == "budget" then
+---    aim_somewhere_closer()
+---end
+---```
+---@param from { x: number, y: number, z: number }
+---@param to { x: number, y: number, z: number }
+---@param options? Tiamot.PathOptions
+---@return { x: number, y: number, z: number }[]|nil route
+---@return string|nil reason `"unreachable"`, `"budget"` or `"no world"` when there is no route
+function game.find_path(from, to, options) end
+
+---Fields accepted by `game.register_fluid`.
+---@class Tiamot.FluidSpec
+---@field id string Unqualified id. `"milk"` from mod `core_milk` becomes `"core_milk:milk"`.
+---@field material string The registered block a full block of it is drawn as. REQUIRED — a fluid with no material cannot be drawn, and the engine does not get to decide what your fluid looks like (charter rule 1). Qualified against your own mod, so a fluid can name its own block.
+---@field tick_rate? integer Simulation ticks between updates. Default 1, which is every fluid tick (10 Hz). Larger is slower and more viscous, and costs proportionally less to simulate.
+---@field color? { r: integer, g: integer, b: integer } What the world looks like from INSIDE the fluid — the tint and fog a submerged camera sees. Channels are 0..=255 and default to white. Deliberately not derived from `material`: a texture is what the surface looks like from outside, and clear water has a vivid surface with a faint tint. The engine has no opinion about either.
+---@field waterlogs_at? integer How full of terrain a block must be before this fluid treats it as floor, in cells of 27. Default 14 — over half. Below it the block is more air than anything and the fluid runs through; at or above it the block holds the fluid up and a mod can swap it for a waterlogged one from `register_on_fluid_flow`. Set it to 1 for the blocky rule where a single chiselled cell makes a block waterproof.
+---@field evaporates? integer One in how many fluid ticks a block open to the air loses a cell. Default 0, which never evaporates. **This destroys matter**, which is why the engine defaults it off and leaves the decision to you — a wide shallow pool goes before a deep narrow one, because more of it is exposed.
+
+---Registers a fluid.
+---
+---Registration only, during the loading window — see charter rule 9. The engine
+---keeps what it must simulate and draw with; everything else a fluid might do,
+---like hurting you or making a sound, is yours and needs no engine support
+---beyond the hooks that already exist.
+---
+Fluid is BLOCK resolution, not sub-node: one volume per block, never a
+---per-cell mask (Sub-Node Contract §4). What the lattice IS consulted for is how
+---much fits — a block one third full of stone holds one third less — so you
+---never have to think about a partially flooded chiselled block, only about how
+---much room one has left.
+---
+---**Fluid is conserved.** Volume moves between blocks and is never created;
+---there are no source blocks, because an infinite spring is a conservation
+---violation by definition. A bucket is a measurement.
+---
+---```lua
+---game.register_block{ id = "milk", texture = "milk.png" }
+---game.register_fluid{ id = "milk", material = "milk" }
+---```
+---@param spec Tiamot.FluidSpec
+function game.register_fluid(spec) end
+
+---Registers a simulation space, or a template for making them.
+---**Registration window only.**
+---
+---A world has `overworld` to begin with; this adds more. Each has its own
+---coordinate frame, its own chunks and its own scale, and **the two frames
+---never talk**: a body is in exactly one of them, sees only that one, and moves
+---between them with `game.transfer_entity`.
+---
+---* `kind` — `"voxel"` (the default) is a normal chunked space. `"sparse"` has
+---  no voxels at all: entities only, for something like a space between worlds.
+---* `scale` — how big one of its units is against the overworld's. Carried and
+---  never interpreted; the engine converts nothing between frames.
+---* `instanced` — declares a TEMPLATE rather than a domain. No domain exists
+---  under that id and nothing is stored for it. Use this for anything a PLAYER
+---  makes: the fifty-first ship somebody welds together needs a fifty-first
+---  domain, and you could not have named it while the registry was open. Make
+---  the instances with `game.create_domain`.
+---
+---The id is namespaced with your mod's id, like every other registration.
+---* `generator` — what fills its chunks, with the same signature as
+---  `game.register_on_generate`. **A domain fills itself or it is air**: the
+---  overworld's generators do not run in it, because a mod that never thought
+---  about domains would otherwise fill every space anybody made with ground.
+---  Air is the right default for a ship's interior — somebody builds it, and
+---  terrain arriving uninvited would be a hill through their hull. A template's
+---  generator is inherited by every instance made from it, so fifty ships are
+---  one piece of worldgen. Refused on a `sparse` domain, which has no chunks
+---  for it to fill.
+---@param spec { id: string, kind: string?, scale: number?, instanced: boolean?, generator: fun(buf: any, pos: { x: integer, y: integer, z: integer })? }
+function game.register_domain(spec) end
+
+---Makes an instance of a template, or hands back the one already there.
+---
+---Returns its id — `template/key` — which is what you pass to
+---`game.transfer_entity`. `nil` if the template is not an instanced one, or the
+---key is unusable (letters, digits and `_`).
+---
+---**Making the same one twice is not an error and empties nothing.** A mod
+---re-entering a ship it already made calls this every time, and a "create" that
+---wiped would be a ship that emptied on its second visit. So this is how you
+---both make one and find one again.
+---@param template string
+---@param key string
+---@return string? id
+function game.create_domain(template, key) end
+
+---Removes an instance and everything stored in it. Permanent.
+---
+---**Refused while anything is inside**, entity or player — the same defect as
+---breaking a container somebody has open. Returns whether the request was
+---carried; the removal itself happens at the end of the tick, so move everybody
+---out and destroy it in the same callback and the order will be right.
+---
+---Only instances. A domain registered in the window is part of the world's
+---shape and cannot be destroyed, and neither can `overworld`.
+---@param id string
+---@return boolean
+function game.destroy_domain(id) end
+
+---What a block holds.
+---
+---`volume` is how much is in it, in CELLS of 27 — the same unit inventory
+---quantities use (charter rule 5), so a puddle and a bucketful are two numbers
+---you can compare directly. A whole block is 27.
+---
+---There is no `source`: fluid is conserved and nothing sustains itself.
+---
+---Coordinates are BLOCKS. A dig event gives you cells — divide by three.
+---
+---Somewhere unloaded answers empty, which is the honest answer for a place
+---nobody is.
+---
+---```lua
+---local here = game.get_fluid{ x = 10, y = 64, z = -3 }
+---if not here.empty and here.volume > 18 then
+---    -- two thirds of a block; deep enough to swim in
+---end
+---```
+---@param position { x: integer, y: integer, z: integer }
+---@return { volume: integer, empty: boolean }
+function game.get_fluid(position) end
+
+---Puts fluid in a block, or takes it away.
+---
+---Returns whether anything changed. Writing to a block that cannot accept fluid
+---is not refused: the next fluid tick clears it, which is the same answer the
+---engine gives when a player builds in a pond. One rule rather than two.
+---
+---`volume` is in cells of 27 and defaults to a whole block. `volume = 0` clears
+---the block whatever `fluid` names.
+---
+---**This writes rather than pours**, so it does not conserve anything on its
+---own: it is how a mod puts fluid into the world in the first place, and what a
+---mod takes out is its own to account for. `game.give` and `game.take` are how
+---a bucket balances the books.
+---
+---```lua
+---game.set_fluid({ x = 10, y = 64, z = -3 }, { fluid = "core_milk:milk", volume = 27 })
+---game.set_fluid({ x = 10, y = 64, z = -3 }, { volume = 0 })  -- scoop it up
+---```
+---@param position { x: integer, y: integer, z: integer }
+---@param spec { fluid: string, volume?: integer }
+---@return boolean changed
+function game.set_fluid(position, spec) end
+
+---Replaces a whole block, at runtime.
+---
+---**The way a mod changes the world after worldgen.** `register_on_generate`
+---writes terrain while a chunk is being made; this writes it while people are
+---standing on it — a block that changes when fluid reaches it, a crop that
+---grows, a fire that spreads.
+---
+---Blocks are NAMED, not numbered, and that is not a convenience. Numeric ids
+---come in two flavours — the runtime ids registration hands out and the world
+---ids the database keeps — and they are different numbers. A mod given the
+---wrong one gets a comparison that works whenever the two happen to coincide.
+---Names have one meaning.
+---
+---The edit is QUEUED and lands on the next tick, so this returns whether it was
+---accepted rather than whether it landed — look next tick to find that out.
+---`false` means the queue is full or nothing is registered under that name.
+---
+---Pass `"engine:air"` to clear a block.
+---
+---```lua
+---game.set_block({ x = 10, y = 64, z = -3 }, "core_milk:waterlogged")
+---```
+---@param position { x: integer, y: integer, z: integer }
+---@param block string A registered block id, qualified.
+---@return boolean queued
+function game.set_block(position, block) end
+
+---A dig about to happen.
+---@class Tiamot.DigEvent
+---@field player string Who is digging, as 64 hex characters. This is the canonical player UUID — key any per-player state on it, never on the display name, which a player can change and which is not unique across servers.
+---@field x integer Sub-node cell being dug. These are CELL coordinates, three per block on each axis, so the block is `x // 3`.
+---@field y integer
+---@field z integer
+---@field material integer Numeric id of what is there. Compare against `game.get_block_id("yourmod:something")`.
+---@field brush string `"block"` for the whole block, `"subnode"` for the single cell.
+
+---A placement about to happen.
+---@class Tiamot.PlaceEvent
+---@field player string Who is placing, as 64 hex characters.
+---@field x integer The BLOCK being written — block coordinates, not cells.
+---@field y integer
+---@field z integer
+---@field material integer What it would be made of.
+---@field occupancy integer Bitmask of which of the block's 27 cells would be filled.
+---@field units integer How many units it would cost, which is the number of set bits in `occupancy`.
+
+---Registers a veto on completed digs.
+---
+---**Registration window only.**
+---
+---Called when a dig has finished counting down and is about to remove
+---geometry — before anything is removed, so refusing costs nothing and leaves
+---no trace. Return `false` to cancel it.
+---
+---Anything else allows it, including returning nothing at all. That is
+---deliberate: a hook that only wants to watch should not have to remember to
+---return something, and forgetting a `return` should not silently make the
+---world unbreakable.
+---
+---**The first mod to refuse wins, and the hooks after it do not run.** Once the
+---dig is not happening, running them would invite them to take side effects for
+---an action that will not occur. Order is mod load order.
+---
+---If your callback raises an error, your mod is disabled for the rest of the
+---session **and the dig goes ahead**. A crash is not a veto — otherwise one
+---broken mod could stop everybody on the server from digging.
+---Return `false` to refuse with the engine's wording, a string to refuse with
+---your own, or `""` to cancel silently — the same ladder
+---`game.register_on_place` uses.
+---@param callback fun(event: Tiamot.DigEvent): boolean|string|nil
+function game.register_on_dig_complete(callback) end
+
+---Registers a veto on placements.
+---
+---**Registration window only.**
+---
+---Called after the engine's own rules have passed — the player is carrying the
+---material, the target block is empty, and nobody is standing in it — and
+---before anything is written or charged. Cancelling leaves the player holding
+---their material.
+---
+---**Cancelling has two meanings and what you return says which.** Refusing the
+---player is one; HANDLING the placement yourself and not wanting a block
+---written is the other — `core_milk` places milk by intercepting a placement,
+---pouring a fluid, and cancelling the write.
+---
+---| return | meaning |
+---| --- | --- |
+---| nothing, or anything truthy | the placement goes ahead |
+---| `false` | refused, and the player is told "you cannot build there" |
+---| `"reason"` | refused, and the player is told exactly that |
+---| `""` | cancelled, and the player is told nothing — you handled it |
+---
+---A returned reason is truncated to 512 bytes.
+---
+---The same rules as `game.register_on_dig_complete` otherwise: the first
+---cancellation stops the rest, and an error disables your mod while letting the
+---placement through.
+---@param callback fun(event: Tiamot.PlaceEvent): boolean|string|nil
+function game.register_on_place(callback) end
+
+---Somebody hitting something.
+---@class Tiamot.PunchEvent
+---@field attacker string Who threw the punch, as 64 hex characters.
+---@field target integer The entity that took it, as `game.entity` names one. Everything in the world is an entity, including the other players.
+---@field owner string|nil The player that entity belongs to, if it belongs to one — so "did somebody hit a person" is one field rather than a lookup.
+---@field player string The same value as `attacker`. Present so every hook event has a `player` field; prefer `attacker` here, because a punch has two parties and `player` does not say which.
+
+---Registers a veto on punches.
+---
+---**Registration window only.**
+---
+---The engine has no damage model and no opinion about what a hit does — that is
+---your rule, not its (charter rule 1). It tells you who hit what, having already
+---checked that the attacker could reach it, and stops there.
+---
+---The rules are the other hooks': return `false` to cancel, anything else
+---allows, the first refusal stops the rest, and an error disables your mod while
+---letting the punch land.
+---
+---```lua
+---game.register_on_punch(function(event)
+---    if event.owner == game.storage.get("imprint") then
+---        return false  -- this one is protected
+---    end
+---end)
+---```
+---@param callback fun(event: Tiamot.PunchEvent): boolean?
+function game.register_on_punch(callback) end
+
+---Fluid pressing against something it cannot get into.
+---
+---Coordinates are BLOCKS on both ends, and they are named rather than being bare
+---`x`/`y`/`z` — a dig event's `x`/`y`/`z` are CELLS, and the two have been
+---confused before.
+---@class Tiamot.FluidFlowEvent
+---@field from { x: integer, y: integer, z: integer } The block the fluid is in.
+---@field into { x: integer, y: integer, z: integer } The block it could not enter.
+---@field fluid string The fluid's registered id, e.g. `"core:milk"`.
+---@field volume integer How much it is pressing with, in cells of 27.
+---@field block string? The blocking block's id, or nil if nothing registered it.
+---@field occupancy integer 27-bit mask of which of the blocking block's sub-nodes are filled.
+---@field units integer How many of the 27 are filled — `occupancy`'s popcount.
+
+---Registers a listener for flows that could not happen.
+---
+---**Registration window only.**
+---
+---# Why the hook is about the flow that DIDN'T happen
+---
+---Where a fluid went is already in the world and `game.get_fluid` will tell you.
+---Where it *tried* to go is recorded nowhere: a block milk cannot enter is a
+---block with no milk in it, and that looks exactly like a block milk never
+---reached. This is the only way to learn the difference.
+---
+---That is the fact waterlogging needs — see `game/core_milk` for the reference
+---implementation, which swaps a block for a wet one when milk presses on it.
+---
+---# It cannot veto
+---
+---The flow has already failed; there is nothing left to allow or refuse, so a
+---return value is ignored. Act on the world instead, with `game.set_block` or
+---`game.set_fluid`. An error still disables your mod, as everywhere else.
+---
+---# It is budgeted, and it is not exhaustive
+---
+---At most 64 blocked flows are reported per fluid tick, and the surplus is
+---DROPPED rather than queued — so a shoreline a thousand blocks long is sampled
+---across several ticks rather than delivered at once. Write the callback so that
+---missing one is harmless: the same shoreline is still there next tick.
+---
+---Nothing fires for a settled world at all. The solver only examines blocks an
+---edit woke or a flow is moving through, so a pond nobody has touched costs
+---nothing here either.
+---@param callback fun(event: Tiamot.FluidFlowEvent)
+function game.register_on_fluid_flow(callback) end
+
+---Registers a named input action.
+---
+---Mods register actions; the engine owns key bindings and mods never read keys.
+---Stored now, inert until Task 13.
+---
+---**Registration window only.**
+---@param spec Tiamot.ActionSpec
+function game.register_action(spec) end
+
+---Looks up a registered block's numeric id by its string id.
+---
+---String ids like `"core:white"` are stable forever. Numeric ids are per
+---session and must never be persisted or hard-coded.
+---@param id string
+---@return integer
+function game.get_block_id(id) end
+
+---The block id a numeric material belongs to: the inverse of `game.get_block_id`.
+---
+---Everything that reports a material reports a NUMBER — an inventory listing, a
+---dig event, a HUD state — because numeric ids are what the world is stored
+---with. They are per-session and mean nothing across runs (charter rule 8), so
+---this is how one gets back to the canonical string a person can read and a mod
+---can compare.
+---
+---Returns nil for a material no mod registered, which is a world written by a
+---different mod set arriving with ids yours has never heard of. Listing it as
+---unknown is the right thing to do about that; erroring is not.
+---@param material integer
+---@return string? id The qualified block id, e.g. "core_blocks:stone".
+function game.block_of(material) end
+
+---Generates a heightmap for a chunk from fractal noise.
+---
+---One call fills all 256 columns natively. There is no per-sample entry point,
+---and that is the point — see the rule at the top of this file.
+---@param pos Tiamot.ChunkPos
+---@param options Tiamot.NoiseOptions
+---@return Tiamot.Heightmap
+function game.noise_heightmap(pos, options) end
+
+---A compiled density field. Opaque, like `Tiamot.Heightmap`, and for the same
+---reason: a script that could read it back would be one sample away from
+---looping over it.
+---@class Tiamot.Density
+local Density = {}
+
+---How many operations it compiled to. For checking your table became what you
+---meant; there is nothing else to know about it.
+---@return integer
+function Density:len() end
+
+---Compiles a density field from a table of nested operations.
+---
+---**This is how a mod gets 3D terrain and caves.** A heightmap gives one
+---height per column and cannot describe an overhang; a density field gives a
+---value at every point in space. You may not compute one yourself — charter
+---rule 4 means per-sample maths in Lua would break the cross-platform
+---guarantee — so you describe the expression and the engine evaluates it
+---natively, whole arrays at a time.
+---
+---**Compile ONCE and capture it.** Building one per chunk puts the table walk
+---back into the hot path this exists to empty:
+---
+---```lua
+---local field = game.density{
+---    op = "min",
+---    -- Terrain: noise that falls off as you go up.
+---    a = {
+---        op = "sub",
+---        a = { op = "noise", stream = "terrain", frequency = 0.03, octaves = 3 },
+---        b = { op = "mul", a = { op = "y" }, b = { op = "const", value = 0.06 } },
+---    },
+---    -- Caves: a tunnel wherever the noise is near zero.
+---    b = {
+---        op = "sub",
+---        a = { op = "const", value = 0.35 },
+---        b = { op = "abs", a = { op = "noise", stream = "caves", frequency = 0.05 } },
+---    },
+---}
+---
+---game.register_on_generate(function(buf, pos)
+---    buf:fill_density(field, stone)
+---end)
+---```
+---
+---The operations, and the list is short ON PURPOSE — every one of them is in
+---the deterministic float subset, and there is no `pow`, `sin`, `exp` or
+---`sqrt` node because those differ between platforms:
+---
+---- `{ op = "const", value = n }`
+---- `{ op = "x" }`, `{ op = "y" }`, `{ op = "z" }` — the sample's WORLD
+---  coordinate, so a field is continuous across chunk boundaries.
+---- `{ op = "noise", stream = "name", octaves = 4, frequency = 0.02,
+---  lacunarity = 2.0, gain = 0.5, amplitude = 1.0 }` — 3D fractal noise. Only
+---  `stream` really matters: it is a NAME, hashed into the world seed, and two
+---  nodes with different names give independent fields. Give your terrain and
+---  your caves different streams or the caves will follow the hills exactly.
+---- `{ op = "abs", a = ... }`
+---- `{ op = "clamp", a = ..., low = -1, high = 1 }`
+---- `{ op = "add" | "sub" | "mul" | "div" | "min" | "max", a = ..., b = ... }`
+---  — `sub` is `a - b` and `div` is `a / b`, in the order written.
+---
+---Refused, with the reason, if the table is malformed, nests more than 64
+---deep, needs more than 8 buffers at once, or compiles to more than 256
+---operations. A field a person writes is a dozen.
+---@param spec table
+---@return Tiamot.Density
+function game.density(spec) end
+
+---A persistent 2D field over a region of the world.
+---
+---Fetched by name, not created: the first run builds it, every run after gets
+---the one stored with the world. See `game.map`.
+---@class Tiamot.Map
+local Map = {}
+
+---Samples along one side.
+---@return integer
+function Map:side() end
+
+---Blocks per sample.
+---@return integer
+function Map:scale() end
+
+---Fills the whole map with fractal noise, in WORLD coordinates.
+---
+---Same options as a density `noise` node, plus `seed`.
+---@param options { seed: integer?, octaves: integer?, frequency: number?, lacunarity: number?, gain: number?, amplitude: number? }
+function Map:noise(options) end
+
+---Adds a constant to every sample.
+---@param by number
+function Map:offset(by) end
+
+---Multiplies every sample by a constant.
+---@param by number
+function Map:scale_by(by) end
+
+---Bounds every sample to a range.
+---@param low number
+---@param high number
+function Map:clamp(low, high) end
+
+---Smooths the map with a box blur.
+---
+---**The primitive erosion is built from.** There is no `erode` in this API and
+---there will not be one: what erosion looks like is an opinion about what a
+---landscape is, and that belongs in your mod. A cheap one is a copy of the map,
+---blurred, combined back with `"min"` — the low ground stays and the peaks come
+---down. Repeat for more.
+---@param radius integer
+function Map:blur(radius) end
+
+---Combines another map into this one, sample for sample.
+---
+---`how` is `"add"`, `"mul"`, `"min"` or `"max"`. The two maps must be the same
+---shape, and a map cannot be combined with itself — `scale_by` says "twice
+---this" without the aliasing.
+---@param other Tiamot.Map
+---@param how string
+function Map:combine(other, how) end
+
+---One chunk's worth of heights, sampled from this map.
+---
+---**This is how a map reaches the world**, and why it is a map rather than a
+---table of numbers: it produces all 256 columns natively, in the order
+---`buf:fill_below_heightmap` consumes. Reading samples one at a time from Lua
+---is the per-sample loop charter rule 4 forbids.
+---@param pos Tiamot.ChunkPos
+---@return Tiamot.Heightmap
+function Map:heightmap(pos) end
+
+---Fetches this mod's map by name, building an empty one the first time.
+---
+---**Fetch-or-create, so the same call works on every run.** The first time a
+---world runs there is nothing and you get an empty field to fill; every time
+---after, the server has already loaded the one it stored. Change `side`,
+---`scale` or `origin_x`/`origin_z` and you get a fresh field instead of old
+---numbers read against a new geometry — a landscape that had silently moved.
+---
+---At most 1,024 samples a side. One sample a block over a 120,000-block world
+---would be 1.4e10 values, which is not a map but a second world; a map covers a
+---REGION, and sampling outside it gives the nearest edge value rather than a
+---hole.
+---
+---```lua
+---local function field()
+---    return game.map{ name = "height", side = 256, scale = 16 }
+---end
+---
+---game.register_on_world_init(function()
+---    local map = field()
+---    map:noise{ seed = 7, frequency = 0.01, octaves = 4, amplitude = 40.0 }
+---    map:offset(20.0)
+---end)
+---
+---game.register_on_generate(function(buf, pos)
+---    buf:fill_below_heightmap(field():heightmap(pos), stone)
+---end)
+---```
+---@param spec { name: string, side: integer?, scale: integer?, origin_x: integer?, origin_z: integer? }
+---@return Tiamot.Map
+function game.map(spec) end
+
+---Runs ONCE in a world's life, before the first chunk is generated.
+---
+---**The world pre-pass.** A `game.density` field is a function of one position,
+---which is enough for terrain and caves and cannot express erosion or a river:
+---where water goes depends on where the land is everywhere else. Those need a
+---whole field computed in passes that see all of it, which is what this is for.
+---
+---Whatever maps you build here are stored with the world, so the next run reads
+---them back and this does not run again. If your mod faults in here it is
+---disabled and the world still generates — a world that refuses to open would
+---be worse than one missing your rivers.
+---@param callback fun()
+function game.register_on_world_init(callback) end
+
+---A heightmap with the same height in every column.
+---@param height integer World block height.
+---@return Tiamot.Heightmap
+function game.flat_heightmap(height) end
+
+---Opens a named random stream for a chunk.
+---
+---Use a distinct name per purpose. Streams under different names are
+---uncorrelated, so drawing more numbers for one cannot shift another — which
+---means you can change one generator without moving everything else in the
+---world.
+---@param pos Tiamot.ChunkPos
+---@param name string
+---@return Tiamot.Stream
+function game.rng_stream(pos, name) end
+
+--- ENTITIES ----------------------------------------------------------------
+---
+--- Positions here are WORLD BLOCKS, as plain numbers, and may be fractional —
+--- one block is one yard. There is no chunk frame in this API and there is not
+--- meant to be: the engine anchors positions to a chunk internally so it never
+--- accumulates a world-space float, and a mod that had to do that itself would
+--- be a mod that gets it wrong sixty thousand blocks out.
+---
+--- Ids are opaque integers. Hold one as long as you like: an id whose entity
+--- has gone stops resolving, it does not start pointing at whatever took its
+--- place.
+
+---Puts an entity in the world.
+---
+---Returns its id, or nil if there is no world yet — during worldgen, say.
+---
+---`collider` is optional, and leaving it out is meaningful: an entity with no
+---box is a marker. It has a position and nothing else, it does not fall, and
+---nothing collides with it.
+---
+---The mod that calls this is recorded as the entity's source, which is what
+---`entities_in_radius` filters on and what tells the engine whose entity a
+---leftover is when a mod is removed from a world.
+---
+---**`item` makes it a thing lying on the ground.** An entity can BE a stack:
+---give it the same `{ material, count/units, shape }` table `game.give` takes
+---and the client draws that stack — the same cells a hand holds and a slot
+---shows — instead of a model. Give it a collider and gravity puts it on the
+---floor; the engine has no further opinion, so how long it lasts, who may pick
+---it up and what that costs are yours to write (charter rule 1).
+---
+---```lua
+---local id = game.spawn_entity{
+---    pos = { x = 10.5, y = 64, z = -3 },
+---    model = "engine:humanoid",
+---    health = 20,
+---    nametag = "Something",
+---    collider = { width = 1.8, height = 5.4 },  -- cells
+---}
+---
+----- A dropped stack: no model, an item, and a small box so it falls.
+---local dropped = game.spawn_entity{
+---    pos = { x = 10.5, y = 64, z = -3 },
+---    item = { material = stone, count = 4 },
+---    collider = { width = 0.6, height = 0.6 },
+---}
+---```
+---@param spec { pos: { x: number, y: number, z: number }, model?: string, item?: table, health?: integer, nametag?: string, collider?: { width: number, height: number } }
+---@return integer|nil id
+function game.spawn_entity(spec) end
+
+---Removes an entity. Returns whether it was there to remove.
+---@param id integer
+---@return boolean removed
+function game.despawn_entity(id) end
+
+---Asks for a body to be moved into another simulation space.
+---
+---**Asked for, not done.** The move runs `on_domain_exit` and then
+---`on_domain_enter`, and your call is already inside a tick — so the engine
+---performs it once every mod has finished running, which is what makes asking
+---mid-tick safe. `true` therefore means ACCEPTED, not arrived: a hook may still
+---refuse, and the destination may fail to generate. You find out what became of
+---it in `on_domain_enter`, which is the only place that answer exists.
+---
+---`false` means it was never going to happen: no such entity, or no domain
+---named. Those are the mistakes you can fix.
+---
+---A player is moved body and all — their view is torn down and rebuilt from the
+---new domain, and they see a loading state while it refills. Nothing crosses
+---with them but what they are carrying.
+---@param id integer
+---@param domain string
+---@param position { x: number, y: number, z: number }
+---@return boolean accepted
+function game.transfer_entity(id, domain, position) end
+
+---Everything the engine knows about an entity, or nil if the id is stale.
+---
+---A copy, not a live view. Read it, decide, and write back with `set_entity`.
+---
+---**Players are entities too.** Every connected player is mirrored into the
+---entity store each tick with `source = "engine:player"`, so `entities_in_radius`
+---finds them like anything else and `owner` is their UUID. Their bodies are moved
+---by their own inputs, so writing to one with `set_entity` is overwritten on the
+---next tick — read them, do not drive them.
+---
+---`owner` is a UUID in hex and **never a name** (charter rule 13): names are a
+---per-server claim that can be rebound, UUIDs are identity. Store the UUID if you
+---mean "this player"; `game.storage` takes strings for exactly that.
+---
+---**A player's body has no `health`.** The engine has no damage model (charter
+---rule 1), so a player's mirror carries no health component and setting one on it
+---would not survive the tick, let alone a rejoin. Keep player stats in
+---`game.storage`, keyed on the UUID: that persists with the world and is yours to
+---define. `health` on an entity YOUR mod spawned is a different thing and works
+---as documented.
+---
+---`nametag` is a literal label somebody set. `nametag_player` is a UUID whose
+---CURRENT display name the engine resolves when it draws the tag — a player's
+---own body has the second, never the first.
+---@param id integer
+---`facing` is the direction the entity is looking, as a unit `{ x, y, z }` —
+---pitch included, so a throw along it goes further when the head is raised and
+---lands at the feet when it is lowered.
+---**Use it rather than computing one from `yaw`.** `math.sin(yaw)` is the
+---platform's libm, so two servers running your mod would put the same thrown
+---item in slightly different places — and that difference becomes persisted
+---world state. The engine works it out from a committed lookup table instead
+---(charter rule 4), so the answer is the same on every machine.
+---
+---`item` is the stack an entity IS, for something lying on the ground, in the
+---same shape `game.inventory` reports one — `{ material, units, blocks, nodes,
+---count, shape }` — so reading an item off the floor and handing it to a player
+---moves one table between two calls.
+---@return { pos: { x: number, y: number, z: number }, yaw: number, pitch: number, facing: { x: number, y: number, z: number }, velocity: { x: number, y: number, z: number }, on_ground: boolean, source: string, model: string|nil, item: table|nil, anim: integer, health: integer|nil, max_health: integer|nil, owner: string|nil, nametag: string|nil, nametag_player: string|nil }|nil
+function game.entity(id) end
+
+---Changes an entity. Returns whether anything changed.
+---
+---Every field is optional and anything you leave out is left alone. You cannot
+---create or destroy an entity here, change its size, or change its source:
+---those are decided when it spawns.
+---
+---**`drive` is how you move something, and `pos` is not.** `drive` is what the
+---entity is TRYING to do, and the engine's physics does the rest — it walks,
+---collides, steps up a lip and swims exactly as a player does. Setting `pos`
+---teleports, without sweeping, so it will happily put a mob inside a wall and
+---the engine will leave it there.
+---
+---```lua
+---game.set_entity(id, {
+---    drive = { walk = { x = 1, z = 0 }, gait = "walk" },
+---    yaw = 1.57,
+---    anim = 1,  -- WALK
+---})
+---```
+---@param id integer
+---@param spec { pos?: { x: number, y: number, z: number }, velocity?: { x: number, y: number, z: number }, yaw?: number, pitch?: number, health?: integer, anim?: integer, drive?: { walk?: { x: number, z: number }, jump?: boolean, gait?: "walk"|"sprint"|"sneak" } }
+---@return boolean changed
+function game.set_entity(id, spec) end
+
+---Puts a connected player somewhere else. Returns whether it happened.
+---
+---**Not `game.set_entity` on their body.** A player is in the entity store as a
+---transient COPY of a body the engine steps from their own inputs, and that copy
+---is overwritten every tick — so a position written to it does nothing, silently,
+---which is the worst shape a failure can take. This writes the body itself and
+---the client's ordinary correction carries it.
+---
+---A teleport, not a walk: nothing is swept, so naming the inside of a wall puts
+---a player inside a wall. Check with `game.get_block` first if that matters.
+---Velocity is cleared, because somebody teleported mid-fall who kept their speed
+---arrives already moving, which reads as the destination throwing them.
+---
+---`false` means the player is not connected, or the position is outside the
+---world.
+---
+---```lua
+----- A respawn point, remembered per player and keyed on the UUID.
+---local home = game.storage.get("home:" .. event.player)
+---if home then
+---    game.move_player(event.player, home)
+---end
+---```
+---@param player string The player's UUID, in hex.
+---@param position { x: number, y: number, z: number }
+---@return boolean moved
+function game.move_player(player, position) end
+
+---Selects one of a player's hotbar slots.
+---
+---**The one direction the hotbar did not travel.** Which slot somebody holds is
+---the client's own UI state and only ever came inward — `game.held` could read
+---it and nothing could change it. The thing a mod most wants to do about a slot
+---is move a player off one that has just emptied: a tool that broke, a stack
+---placed to its last unit, a hand emptied by a recipe. Each of those leaves
+---somebody pressing a key that does nothing.
+---
+---Slots are zero-based, matching `state.selected` in a HUD script. A slot the
+---player does not have is IGNORED by the client rather than clamped — clamping
+---would silently select a slot you did not name, which looks almost right and
+---is worse for it.
+---
+---`false` means the player is not connected. A `true` means it was sent, not
+---that the client acted on it.
+---
+---```lua
+------ Move somebody off a slot their last block just left.
+---game.register_on_place(function(event)
+---    local held = game.held(event.player)
+---    if held == nil then
+---        game.select_slot(event.player, 0)
+---    end
+---end)
+---```
+---@param player string The player's UUID, in hex.
+---@param slot integer Which slot, zero-based.
+---@return boolean sent
+function game.select_slot(player, slot) end
+
+---Adds to a connected player's velocity, in cells per tick. Returns whether the
+---player was there to push.
+---
+---Knockback, an explosion, a jump pad. **Added, not set**, because every one of
+---those is a push ON a body already doing something — and a mod that wants to
+---stop somebody dead can read the velocity off their body with `game.entity` and
+---push back by the same amount.
+---
+---An upward push also takes them off the ground, or the next step's friction
+---eats a shove meant to move somebody standing still.
+---
+---```lua
+---game.push_player(event.player, { x = 0, y = 0.9, z = 0 })   -- a jump pad
+---```
+---@param player string The player's UUID, in hex.
+---@param impulse { x: number, y: number, z: number }
+---@return boolean pushed
+function game.push_player(player, impulse) end
+
+---Every entity within `radius` blocks of a position, nearest first.
+---
+---`source` filters by which mod spawned them. That is the only label the
+---engine has an opinion about — it has no idea what a "hostile" is — so a
+---finer filter belongs in your own state.
+---
+---```lua
+---for _, id in ipairs(game.entities_in_radius({ x = 0, y = 64, z = 0 }, 32)) do
+---    ...
+---end
+---```
+---@param position { x: number, y: number, z: number }
+---@param radius number Blocks.
+---@param source? string
+---@return integer[]
+function game.entities_in_radius(position, radius, source) end
+
+---The entity mirroring a connected player, by their UUID. Nil if they are not here.
+---
+---**The other half of charter rule 13.** Every hook hands you a UUID — who dug,
+---who spoke, who pressed a key — and every entity call takes an id, so without
+---this a mod that knows WHO cannot find out WHERE. Feed the id straight to
+---`game.entity` for their position, or to `set_entity` and the rest.
+---
+---Ids are per-session and a player's changes every time they join, so look it
+---up when you need it rather than remembering it.
+---
+---```lua
+---game.register_on_action(function(event)
+---    local body = game.player_entity(event.player)
+---    local where = body and game.entity(body)
+---    if where then game.log("they are at " .. where.pos.x) end
+---end)
+---```
+---@param player string A player UUID in hex.
+---@return integer|nil id
+function game.player_entity(player) end
+
+--- MOD STORAGE -------------------------------------------------------------
+
+---Your mod's own persistent key/value store, saved with the world.
+---
+---Somewhere to keep a fact that is not attached to a block, a chunk or an
+---entity — which world this is, whether something has happened yet, who a
+---thing belongs to. Without it, such a fact has to be smuggled into a block
+---somewhere, where a player can dig it up.
+---
+---**It is yours alone.** There is nowhere in this API to name another mod's
+---storage, so two mods may both use the key `"seen"` and mean different things.
+---
+---Values may be a string, a number or a boolean. Not a table: that would need
+---a serialisation format baked into the mod API for ever, along with the
+---engine's opinion on cycles and functions. Encode your own structure into a
+---string and you can change it whenever you like.
+---
+---**If you are storing "which player", store the UUID and never the name.**
+---Names are a per-server claim and can be rebound to someone else; the UUID is
+---the identity, and every engine system keys on it.
+---
+---```lua
+---game.storage.set("imprint", uuid)     -- a UUID string, not a display name
+---game.storage.set("greeted", true)
+---local who = game.storage.get("imprint")
+---for _, key in ipairs(game.storage.keys()) do ... end
+---```
+---@field storage { get: fun(key: string): string|number|boolean|nil, set: fun(key: string, value: string|number|boolean|nil), keys: fun(): string[] }
+
+--- PLANS ------------------------------------------------------------------
+
+---Boxes of blocks your mod captured from the world, to build again elsewhere.
+---
+---A village, a dungeon, a ship, a player's saved house: anything you want to
+---build more than once. Reading a region with `game.get_block` and writing it
+---back with `game.set_block` means holding tens of thousands of Lua tables and
+---walking them by hand; this does it in the engine.
+---
+---**A plan is named, never held.** You are given no plan value: `capture`
+---writes one under a name and every other call takes that name back. So a
+---copy-and-paste tool is `capture("clipboard", a, b)` then
+---`stamp("clipboard", at)`, and the same names still work after a restart.
+---
+---**They are yours alone**, like `game.storage`: there is nowhere here to name
+---another mod's plans.
+---
+---**Blocks, not materials.** A plan holds material NAMES, so one captured
+---today and stamped tomorrow — or shared between two people whose mods load in
+---a different order — builds the house it captured rather than one made of
+---whatever those numbers mean today.
+---
+---**Stamping ADDS.** A plan records only the blocks that hold something, so
+---air in it is the absence of a block rather than a block of air: a stamp puts
+---a building onto a hillside rather than cutting a box out of it. Clear the
+---space first if you want the box.
+---
+---`capture` returns `nil, reason` when it cannot: `"not loaded"` (some of the
+---box is in terrain nobody has loaded — move closer), `"too big"` (over 64
+---blocks on a side), `"too many blocks"` (over 65,536 filled blocks) or
+---`"no world"` (asked during worldgen, where there is nothing to capture yet).
+---
+---`stamp` returns whether the request was ACCEPTED, not whether it has landed.
+---A plan can hold far more blocks than one tick may apply, so the engine paces
+---it across several — a big building takes a few seconds to appear, and that is
+---the engine protecting the tick rather than a fault. It is `false` when the
+---plan does not exist or too many stamps are already waiting.
+---
+---```lua
+---local made = game.plans.capture("hut", { x = 0, y = 8, z = 0 }, { x = 7, y = 12, z = 7 })
+---if made then
+---    game.log(made.blocks .. " blocks, " .. (made.materials["core:stone"] or 0) .. " units of stone")
+---    game.plans.stamp("hut", { x = 40, y = 8, z = 40 })
+---end
+---for _, name in ipairs(game.plans.list()) do game.log(name) end
+---```
+---
+---`capture` and `info` answer
+---`{ size = { x, y, z }, blocks = n, materials = { ["core:stone"] = units } }`.
+---**`materials` is in UNITS** — 27 to a whole block, the same count an
+---inventory uses — so you can compare it with what a player is carrying
+---without converting anything.
+---@field plans { capture: fun(name: string, from: table, to: table): table|nil, string, stamp: fun(name: string, at: table): boolean, info: fun(name: string): table|nil, list: fun(): string[], forget: fun(name: string): boolean }
+
+---Runs once per tick for every entity your mod spawned.
+---
+---**This is where a mob's behaviour lives.** The engine moves bodies and this
+---decides where they are trying to go — set `drive` and the physics that runs
+---immediately afterwards acts on it, in the same tick.
+---
+---Called with the entity's id, so use `game.entity(id)` to read it and
+---`game.set_entity(id, ...)` to change it. You only ever see your own
+---entities; the engine does the grouping.
+---
+---**Each entity gets its own instruction budget**, not a share of one. Two
+---hundred mobs are two hundred budgets, and one runaway mob cannot starve the
+---rest. An error disables your whole mod, as every hook does — and it stops at
+---the first failure rather than reporting the same error two hundred times.
+---
+---```lua
+---game.register_on_entity_step(function(id, dt)
+---    local me = game.entity(id)
+---    if not me then return end
+---    game.set_entity(id, { drive = { walk = { x = 1, z = 0 }, gait = "walk" } })
+---end)
+---```
+---@param callback fun(id: integer, dt: integer)
+function game.register_on_entity_step(callback) end
+
+return game
