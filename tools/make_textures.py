@@ -32,6 +32,12 @@ BLOCKS = {
     "scorch":         ( 70,  45,  30,  8),
     "marrow":         (235, 228, 210,  8),
     "apex_stone":     ( 55,  30,  70,  8),
+    "water":          ( 50, 110, 170,  6),
+}
+
+# Alpha per texture; everything not listed is opaque.
+ALPHA = {
+    "water": 150,
 }
 
 
@@ -62,7 +68,7 @@ def texture(name, r, g, b, grain):
             n = (next(rng) % (2 * grain + 1)) - grain
             edge = x == 0 or y == 0 or x == SIZE - 1 or y == SIZE - 1
             shade = -18 if edge else 0
-            row += [max(0, min(255, v + n + shade)) for v in (r, g, b)] + [255]
+            row += [max(0, min(255, v + n + shade)) for v in (r, g, b)] + [ALPHA.get(name, 255)]
         rows.append(row)
     return png(SIZE, SIZE, rows)
 

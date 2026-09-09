@@ -51,7 +51,20 @@ block("stone", "Stone", "The body of the world.", { hardness = 1.5, tint = ROCK 
 block("dirt", "Dirt", "Ground with no biome claim on it yet.", { hardness = 0.5, tint = SOIL })
 block("grass", "Grass", "Temperate turf.", { hardness = 0.5, tint = GREEN })
 block("oak_log", "Oak log", "Trunk of a temperate oak.", { hardness = 1.0, tint = SOIL })
-block("oak_leaves", "Oak leaves", "Canopy of a temperate oak.", { hardness = 0.2, tint = GREEN })
+-- Transparent: a face draws only where one side of it is leaves, so a canopy
+-- is a shell rather than a stack of boxes, and light reaches the ground.
+block("oak_leaves", "Oak leaves", "Canopy of a temperate oak.", { hardness = 0.2, tint = GREEN, transparent = true })
+
+-- Water: the block a full block of the fluid is drawn as, and the fluid.
+block("water", "Water", "Drawn wherever water is. Not something you place.",
+    { hardness = 0.1, transparent = true })
+game.register_fluid{
+    id = "water",
+    material = "water",
+    tick_rate = 2,
+    evaporates = 0,
+    color = { r = 40, g = 90, b = 140 },
+}
 
 -- Depth bands -----------------------------------------------------------
 block("gloam_stone", "Gloam stone", "Dark-cave rock, 1.6 to 4 km down.", { hardness = 2.0, tint = ROCK })

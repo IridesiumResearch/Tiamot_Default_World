@@ -59,13 +59,13 @@ and names any biome that is registered but not yet built.
 - **Relief**: 3D fBm with a vertical gradient, masked so the Crown is a
   massif (±1.7 km) and the rings roll (±0.42 km on 12 km), plus the hills you
   actually walk over: a 1.5 km-wavelength detail term (±150 blocks).
-- **Bluffs**: a hard-clamped noise term that makes terraces; **off** for now
-  (`BLUFF_AMP = 0`) — as a constant it puts a wall along every zero crossing.
-  It wants a mask that places it, not a constant.
+- **Bluffs**: a hard-clamped noise term that makes 8-block terraces, masked
+  by a much slower noise so they show in patches over about a fifth of the
+  ground rather than along every zero crossing.
 - **Boulders**: a fine noise thresholded rare, with the threshold rising
-  with height above the ground so a blob is widest at the grass and tapers
-  upward — rocks sitting on the ground, part buried, never hanging. On one
-  surface chunk in three, so they come in groups.
+  fast above the ground so only the top block or so of a six-block blob
+  shows — rocks four fifths buried, never hanging. On one surface chunk in
+  six, so they come in groups.
 - **The plain**: a ~3 km-wide ring at the spawn radius where the relief is
   scaled to a tenth, so the ground is within ~100 blocks of the base dome and
   a first visit lands in one look with no hopping through unloaded chunks.
@@ -120,10 +120,13 @@ vertically at the pole is 125 km-blocks thick in E.
 Every biome from the design is registered in `biomes/catalogue.lua`; each is
 built one at a time in its own file. Built so far:
 
-- [x] 1.1 Temperate Woodlands — grass on the temperate ring's wetter half;
-      oaks grow in by random tick on grass. Whole-block trees for now: organic
-      trunks and leaf-shaped canopies need a runtime sub-node write the engine
-      does not have yet.
+- [x] 1.1 Temperate Woodlands — grass on the temperate ring's wetter half.
+      Oaks grow in by random tick on grass: schematics, 8–11 blocks of trunk
+      planted down into the ground until it meets a whole block, a canopy of
+      overlapping ellipsoids rounded to the cell (`game.set_block` with a
+      27-cell mask), thin branches out to the side clumps. Now and then a
+      grass patch is dug into a pool: a one-block bank round a bowl of water.
+      Edits go through `edits.lua`, a paced queue, 256 a tick.
 
 ## Licence
 

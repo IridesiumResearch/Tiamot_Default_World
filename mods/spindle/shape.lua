@@ -66,20 +66,25 @@ M.DETAIL_FREQ = 1 / 1500
 M.DETAIL_OCTAVES = 3
 -- Bluffs: a low-frequency noise clamped hard makes plateaus at +/-BLUFF_AMP
 -- with a short, steep step between them wherever the noise crosses zero.
--- OFF (0): clamped that hard, the steps run along every zero crossing of the
--- noise, which is a wall every two hundred blocks in a random direction.
--- Terraces want a mask that puts them in a few places, not a constant.
-M.BLUFF_AMP = 0.0        -- km; 0.008 is 16-block cliffs
+-- Clamped that hard the steps run along EVERY zero crossing, which as a
+-- constant was a wall every two hundred blocks in a random direction — so
+-- the term is masked by a second, slower noise, and shows only in patches
+-- that cover about a fifth of the ground.
+M.BLUFF_AMP = 0.004      -- km: 8-block steps
 M.BLUFF_FREQ = 1 / 350
 M.BLUFF_OCTAVES = 2
 M.BLUFF_STEEP = 20.0     -- how sharply the noise is clamped: bigger is steeper
+M.BLUFF_PATCH_FREQ = 1 / 2000
+M.BLUFF_PATCH_MIN = 0.12 -- the patch noise (+/-0.42) must exceed this
+M.BLUFF_PATCH_RAMP = 20.0 -- how quickly a patch fades in past that
 -- Boulders: a fine noise thresholded rare, and made harder to pass the
--- higher above the ground a cell is, so a blob is widest at the ground and
--- tapers upward — a rock sitting on the grass, part of it buried, never a
--- lump hanging in the air.
-M.BOULDER_FREQ = 1 / 8
-M.BOULDER_THRESHOLD = 0.33   -- the noise runs +/-0.42; this keeps about one percent
-M.BOULDER_TAPER = 60.0       -- threshold rises by this per km of height: gone by ~2 blocks
+-- higher above the ground a cell is. Under the ground the blob is whole;
+-- above it the threshold climbs so fast that only the top of a blob shows,
+-- a block or so — a rock that is four fifths buried, never a lump in the
+-- air. Blobs are six or so blocks across, so most of one is under the grass.
+M.BOULDER_FREQ = 1 / 12
+M.BOULDER_THRESHOLD = 0.36   -- the noise runs +/-0.42; this keeps a fraction of a percent
+M.BOULDER_TAPER = 40.0       -- threshold rises by this per km of height: gone by 1.5 blocks
 
 -- The plain. Nothing in Lua can evaluate the relief, so the one place a
 -- player has to be put down blind is where the relief is SMALL by
@@ -186,10 +191,13 @@ local function relief_mask()
         M.RELIEF_FLOOR, 1.0)
 end
 
--- The terraces: BLUFF_AMP * clamp(STEEP * n, -1, 1).
+-- The terraces: BLUFF_AMP * clamp(STEEP * n, -1, 1) * patch, where patch
+-- is clamp(RAMP * (n2 - MIN), 0, 1) on a much slower noise.
 local function bluffs()
-    return mul(const(M.BLUFF_AMP),
-        clamp(mul(noise("bluff", M.BLUFF_FREQ, M.BLUFF_OCTAVES, 1.0), const(M.BLUFF_STEEP)), -1.0, 1.0))
+    local step = clamp(mul(noise("bluff", M.BLUFF_FREQ, M.BLUFF_OCTAVES, 1.0), const(M.BLUFF_STEEP)), -1.0, 1.0)
+    local patch = clamp(mul(sub(noise("bluff_patch", M.BLUFF_PATCH_FREQ, 2, 1.0), const(M.BLUFF_PATCH_MIN)),
+        const(M.BLUFF_PATCH_RAMP)), 0.0, 1.0)
+    return mul(mul(step, patch), const(M.BLUFF_AMP))
 end
 
 -- PLAIN_FLOOR at the plain's centre radius, 1 from PLAIN_HALF_WIDTH_U out:

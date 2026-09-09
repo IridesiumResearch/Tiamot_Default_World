@@ -37,6 +37,7 @@ end
 spindle.blocks = load("blocks")
 spindle.shape = load("shape")
 spindle.layers = load("layers")
+spindle.edits = load("edits")   -- the paced runtime edit queue
 load("biomes")             -- registry: spindle.register_area / register_biome
 load("biomes.catalogue")   -- every area and every biome, as data
 load("biomes.temperate_woodlands")   -- 1.1, the first one built
