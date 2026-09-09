@@ -17,9 +17,11 @@
 -- **The first fill at a surface gives it its shape**, and sub-node fills
 -- only ADD cells (see shape.lua), so the order is: the whole solid body as
 -- DIRT, smooth — that is the surface; then stone from five blocks down, the
--- deep bands, the biome's own top, and boulders, each writing only where it
--- is positive and leaving the surface's shape alone. Then the core stack
--- over the middle, and the Hollow carved out of it.
+-- deep bands, and the biome's own top, each writing only where it is
+-- positive and leaving the surface's shape alone. Then the core stack over
+-- the middle, and the Hollow carved out of it. Rocks, trees and pools are
+-- not generated at all: they are grown afterwards, by random tick, where the
+-- surface can be read (biomes/temperate_woodlands.lua).
 --
 -- Nothing here samples a field. Everything in Lua is a BOUND on a chunk,
 -- computed with + - * / on doubles, which is IEEE-exact everywhere.
@@ -39,7 +41,6 @@ local WARP_HI = 1.0 + shape.FLANK_WARP * NOISE_BOUND
 local WARP_LO = 1.0 - shape.FLANK_WARP * NOISE_BOUND
 local STACK_Y_BLOCKS = shape.STACK_Y * 1000 + shape.Y0
 local HOLLOW_IN = (shape.HOLLOW_R - SAFETY) * (shape.HOLLOW_R - SAFETY)
-local BOULDERS_EVERY = 6          -- one surface chunk in this many gets the boulder field
 
 -- Chunk-class counters, logged now and then so the cost mix is visible.
 local stats = { air = 0, hollow = 0, filled = 0, carved = 0, surface = 0, shells = 0, total = 0 }
@@ -64,8 +65,23 @@ local function band_for(dmin)
     return blocks.stone, 0
 end
 
+-- The world seed reaches Lua as an integer when it fits one and as a FLOAT
+-- when it does not (half of all seeds), and a float in a bitwise expression
+-- is an error that disables the mod. So a hashable integer is derived once,
+-- from the low bits, and that is what the random-tick handlers mix in.
+local function seed_int(seed)
+    local whole = math.tointeger(seed)
+    if whole then
+        return whole
+    end
+    return math.tointeger(seed % 4294967296.0) or 0
+end
+
 game.register_on_generate(function(buf, pos)
-    spindle.seed = pos.seed
+    if spindle.seed ~= pos.seed then
+        spindle.seed = pos.seed
+        spindle.seed_int = seed_int(pos.seed)
+    end
     stats.total = stats.total + 1
     if stats.total % LOG_EVERY == 0 then
         game.log(string.format(
@@ -157,18 +173,12 @@ game.register_on_generate(function(buf, pos)
         if level < 2 and dmax > shape.ABYSS_D - SAFETY then
             buf:fill_density(V.abyss, blocks.abyss_stone, DETAIL)
         end
-        if skin and inside_body then
-            -- The biome's own top, and boulders on some chunks and not
-            -- others, so they come in groups rather than as an even scatter.
-            if tmin < shape.SKIN_TOP then
-                for _, biome in ipairs(spindle.surface_biomes_in(ulo, uhi)) do
-                    for _, fill in ipairs(biome.fills) do
-                        buf:fill_density(fill.field, fill.material, DETAIL)
-                    end
+        if skin and inside_body and tmin < shape.SKIN_TOP then
+            -- The biome's own top.
+            for _, biome in ipairs(spindle.surface_biomes_in(ulo, uhi)) do
+                for _, fill in ipairs(biome.fills) do
+                    buf:fill_density(fill.field, fill.material, DETAIL)
                 end
-            end
-            if game.rng_stream(pos, "boulders"):below(BOULDERS_EVERY) == 0 then
-                buf:fill_density(P.top.boulders, blocks.stone, DETAIL)
             end
         end
     end

@@ -62,10 +62,9 @@ and names any biome that is registered but not yet built.
 - **Bluffs**: a hard-clamped noise term that makes 8-block terraces, masked
   by a much slower noise so they show in patches over about a fifth of the
   ground rather than along every zero crossing.
-- **Boulders**: a fine noise thresholded rare, with the threshold rising
-  fast above the ground so only the top block or so of a six-block blob
-  shows — rocks four fifths buried, never hanging. On one surface chunk in
-  six, so they come in groups.
+- **Rocks**: not generated — grown by random tick on grass like the trees,
+  as schematics: a point, a squat ellipsoid round it rounded to the cell,
+  three quarters buried, in patches (one 32-block square in four).
 - **The plain**: a ~3 km-wide ring at the spawn radius where the relief is
   scaled to a tenth, so the ground is within ~100 blocks of the base dome and
   a first visit lands in one look with no hopping through unloaded chunks.

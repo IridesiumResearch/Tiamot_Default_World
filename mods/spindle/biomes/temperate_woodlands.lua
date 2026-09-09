@@ -4,8 +4,8 @@
 -- 1.1 Temperate Woodlands.
 --
 -- Where: the temperate ring (t = 0.18 .. 0.35 from the axis), on the wetter
--- side of the humidity noise. What: grass on the top blocks, oak trees, and
--- the occasional pool.
+-- side of the humidity noise. What: grass on the top blocks, oak trees,
+-- rocks in patches, and the occasional pool.
 --
 -- Two mechanisms, because the engine offers two:
 --
@@ -48,6 +48,12 @@ local ROOT_DEPTH = 3           -- how far down the trunk may go looking for whol
 local CANOPY_R, CANOPY_R_EXTRA = 3.5, 1.5   -- half-width of the main clump, blocks
 local CANOPY_FLAT = 0.7        -- height as a share of width
 local CLUMPS_MIN, CLUMPS_EXTRA = 2, 3       -- side clumps, each with a branch to it
+
+local ROCK_CHANCE = 350        -- one grass block in this many, inside a rock patch
+local ROCK_PATCH = 32          -- patches are this many blocks square...
+local ROCK_PATCH_ONE_IN = 4    -- ...and one in this many has rocks
+local ROCK_R_MIN, ROCK_R_EXTRA = 1.0, 1.6   -- half-width, blocks
+local ROCK_BURIED = 0.75       -- share of a rock's height under the grass
 
 local POOL_CHANCE = 60000      -- one grass block in this many: very occasional
 local POOL_R = 3               -- radius of the bank, blocks; water is one block down
@@ -336,11 +342,49 @@ end
 -- Which grass blocks are candidates is decided by an integer hash of the
 -- position and the world seed, before anything is read or any stream opened:
 -- a busy world hands this handler thousands of blocks a tick and almost all
--- of them must cost nothing. Plain integer arithmetic; exact.
+-- of them must cost nothing. Plain integer arithmetic; exact. `seed_int` is
+-- the generator's integer form of the seed — the seed itself can be a float.
 local function candidate(x, y, z, one_in)
-    local h = (x * 73856093) ~ (y * 19349663) ~ (z * 83492791) ~ ((spindle.seed or 0) * 2654435761)
+    local h = (x * 73856093) ~ (y * 19349663) ~ (z * 83492791) ~ ((spindle.seed_int or 0) * 2654435761)
     h = h ~ (h >> 17)
     return h % one_in == 0
+end
+
+-- Rocks ----------------------------------------------------------------------
+
+-- A rock is a point and a squat ellipsoid round it, rounded to the cell and
+-- three quarters buried. The part above the grass goes into empty blocks as
+-- stone cells; the surface block it sits in keeps its own cells and becomes
+-- stone with them, so the rock stands in a small footprint of bare rock;
+-- whole blocks underneath are left alone, since nothing of the rock shows
+-- there. Rocks come in patches: a coarse grid of the world, one square in a
+-- few, is where they may grow at all.
+local function place_rock(x, y, z, rng)
+    local r = ROCK_R_MIN + rng:below(9) / 8 * ROCK_R_EXTRA
+    local rx = r * (0.8 + rng:below(5) / 10)
+    local rz = r * (0.8 + rng:below(5) / 10)
+    local ry = r * (0.5 + rng:below(5) / 10)
+    local ground = y + 0.6                       -- about where a partial top block's surface is
+    local cy = ground + ry * (1.0 - 2.0 * ROCK_BURIED)
+    local cx, cz = x + 0.5 + (rng:below(5) - 2) / 4, z + 0.5 + (rng:below(5) - 2) / 4
+    if not edits.room() then
+        return false
+    end
+    edits.begin()
+    for bz = math.floor(cz - rz), math.floor(cz + rz) do
+        for by = math.floor(cy - ry), math.floor(cy + ry) do
+            for bx = math.floor(cx - rx), math.floor(cx + rx) do
+                local mask = ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz)
+                if mask ~= 0 then
+                    local b = at(bx, by, bz)
+                    if b ~= nil and b.occupancy ~= FULL then
+                        edits.push({ x = bx, y = by, z = bz }, "spindle:stone", mask | b.occupancy)
+                    end
+                end
+            end
+        end
+    end
+    return edits.commit()
 end
 
 game.register_random_tick(blocks.grass, function(event)
@@ -352,13 +396,21 @@ game.register_random_tick(blocks.grass, function(event)
         dig_pool(x, y, z)
         return
     end
-    if not candidate(x, y, z, TREE_CHANCE) then
+    local rock = candidate(x, y, z, ROCK_CHANCE)
+        and candidate(x // ROCK_PATCH, 7, z // ROCK_PATCH, ROCK_PATCH_ONE_IN)
+    if not rock and not candidate(x, y, z, TREE_CHANCE) then
         return
     end
     -- One stream per block, so two grass blocks in one chunk do not grow the
-    -- same tree. The world seed is captured by the generator.
+    -- same thing. The world seed is captured by the generator.
     local rng = game.rng_stream(
         { x = x // 16, y = y // 16, z = z // 16, seed = spindle.seed or 0 },
-        "tree:" .. x .. ":" .. y .. ":" .. z)
-    grow_tree(x, y, z, rng)
+        "grow:" .. x .. ":" .. y .. ":" .. z)
+    if rock then
+        place_rock(x, y, z, rng)
+    else
+        grow_tree(x, y, z, rng)
+    end
 end)
+
+game.log("spindle: woodlands grow trees, rocks and pools by random tick")

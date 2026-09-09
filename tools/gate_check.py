@@ -111,7 +111,6 @@ def classify(cx, cy, cz):
         if level < 2 and dmax > ABYSS_D - SAFETY: fills.append(f"{V}.abyss")
         if skin and inside_body:
             if tmin < SKIN_TOP: fills.append("biomes")
-            fills.append("boulders?")
     for sid, outer, inner in SHELLS:
         if e2lo < outer * outer and e2hi > inner * inner: fills.append(f"shell.{sid}")
     if e2lo < HOLLOW_R * HOLLOW_R: fills.append("hollow")

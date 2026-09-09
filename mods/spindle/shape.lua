@@ -79,15 +79,6 @@ M.BLUFF_STEEP = 20.0     -- how sharply the noise is clamped: bigger is steeper
 M.BLUFF_PATCH_FREQ = 1 / 2000
 M.BLUFF_PATCH_MIN = 0.12 -- the patch noise (+/-0.42) must exceed this
 M.BLUFF_PATCH_RAMP = 20.0 -- how quickly a patch fades in past that
--- Boulders: a fine noise thresholded rare, and made harder to pass the
--- higher above the ground a cell is. Under the ground the blob is whole;
--- above it the threshold climbs so fast that only the top of a blob shows,
--- a block or so — a rock that is four fifths buried, never a lump in the
--- air. Blobs are six or so blocks across, so most of one is under the grass.
-M.BOULDER_FREQ = 1 / 12
-M.BOULDER_THRESHOLD = 0.36   -- the noise runs +/-0.42; this keeps a fraction of a percent
-M.BOULDER_TAPER = 40.0       -- threshold rises by this per km of height: gone by 1.5 blocks
-
 -- The plain. Nothing in Lua can evaluate the relief, so the one place a
 -- player has to be put down blind is where the relief is SMALL by
 -- construction: a ring of the disc, centred on the spawn radius and about
@@ -236,15 +227,6 @@ function M.terrain_band(lo, hi, flank)
     return min(sub(M.terrain(flank), const(lo)), mul(sub(M.terrain(flank), const(hi)), const(-1.0)))
 end
 
--- Boulders: noise - threshold - TAPER * (height above ground). Positive
--- underground too, which puts bare rock in the skin where a boulder is
--- buried; the fills that follow do not touch it.
-function M.boulders()
-    local height = clamp(mul(M.terrain(false), const(-1.0)), 0.0, 1.0)
-    return sub(sub(noise("boulder", M.BOULDER_FREQ, 2, 1.0), const(M.BOULDER_THRESHOLD)),
-        mul(height, const(M.BOULDER_TAPER)))
-end
-
 -- W(Y) as a sum of clamped ramps on RAW y, so each segment is seven ops.
 -- W = W_top + sum_i s_i * clamp(y - y_i, dy_i, 0), s_i in km per block.
 local function half_width()
@@ -308,7 +290,6 @@ P.top = {
     stone = compile("top.stone", sub(M.terrain(false), const(M.SKIN_DIRT))),
     gloam = compile("top.gloam", sub(M.depth(), const(M.GLOAM_D))),
     abyss = compile("top.abyss", sub(M.depth(), const(M.ABYSS_D))),
-    boulders = compile("top.boulders", M.boulders()),
 }
 P.flank = {
     solid = compile("flank.solid", min(M.terrain(true), M.body())),
