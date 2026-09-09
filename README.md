@@ -62,10 +62,18 @@ and names any biome that is registered but not yet built.
 - **Bluffs**: a low-frequency noise clamped hard, added to the terrain field,
   gives plateaus with 16-block steps between them — terraces and small cliffs
   every few hundred blocks.
-- **Boulders**: a fine noise thresholded rare in the six blocks of air above
-  the ground, on one surface chunk in three, so they come in groups.
+- **Boulders**: a fine noise thresholded rare, with the threshold rising
+  with height above the ground so a blob is widest at the grass and tapers
+  upward — rocks sitting on the ground, part buried, never hanging. On one
+  surface chunk in three, so they come in groups.
+- **The spawn clearing**: the relief fades to nothing within 250 blocks of
+  the spawn column, so the ground height there is known and a first visit
+  lands from three blocks up rather than being searched for.
 - **Sub-node surfaces**: every fill a player can see runs with
-  `{ detail = "smooth" }`, so slopes are slopes. Constants in `shape.lua`.
+  `{ detail = "smooth" }`, so slopes are slopes. Fills ADD at cell resolution
+  (engine `fill_density_detail`, fixed 2026-09-09), so the layers are painted
+  in order — dirt shapes the surface, stone from five blocks down, the
+  biome's block on top, boulders — each writing only where it is positive.
 - **Tint**: every block declares the engine's large-scale colour field, tone
   only for rock and a green–yellow hue shift for grass and leaves.
 
@@ -108,10 +116,10 @@ vertically at the pole is 125 km-blocks thick in E.
 Every biome from the design is registered in `biomes/catalogue.lua`; each is
 built one at a time in its own file. Built so far:
 
-- [x] 1.1 Temperate Woodlands — grass on the temperate ring's wetter half.
-      Canopies are generated as organic leaf blobs above the ground (a density
-      band, sub-node smooth); trunks grow up into them by random tick on
-      grass.
+- [x] 1.1 Temperate Woodlands — grass on the temperate ring's wetter half;
+      oaks grow in by random tick on grass. Whole-block trees for now: organic
+      trunks and leaf-shaped canopies need a runtime sub-node write the engine
+      does not have yet.
 
 ## Licence
 

@@ -18,14 +18,19 @@
 --     again when they leave, so a dropped connection loses at most a few
 --     steps.
 
-local SPAWN = { x = 15300.5, y = 30300, z = 0.5 }   -- above the woodlands ring
+-- The spawn clearing: shape.lua flattens the relief around this column, so
+-- the ground height there is known and the drop is a couple of blocks.
+local SPAWN = {
+    x = spindle.shape.SPAWN_X + 0.5,
+    y = spindle.shape.spawn_surface_y() + 3,
+    z = spindle.shape.SPAWN_Z + 0.5,
+}
 local SAMPLE_EVERY = 10        -- ticks between position samples
 local SAVE_EVERY = 400         -- ticks between writes to storage
 local SCAN_DOWN = 180          -- blocks searched below a landing player
 local HOP = 160                -- blocks dropped when all of that is air
 local GIVE_UP_AFTER = 1200     -- ticks (one minute) before a landing is abandoned
 
-local AIR = game.AIR
 local online = {}              -- uuid -> { pos, pending, landing }
 local tick = 0
 
@@ -84,7 +89,7 @@ local function land(uuid, rec)
         return          -- not loaded yet; the player is held still until it is
     end
 
-    if feet.material ~= AIR then
+    if feet.occupancy ~= 0 then
         -- Inside rock: climb until there is headroom.
         local clear, y = 0, feet_y + 1
         for _ = 1, 200 do
@@ -92,7 +97,7 @@ local function land(uuid, rec)
             if block == nil then
                 return
             end
-            clear = block.material == AIR and clear + 1 or 0
+            clear = block.occupancy == 0 and clear + 1 or 0
             if clear >= 3 then
                 game.move_player(uuid, { x = x + 0.5, y = y - 2 + 0.01, z = z + 0.5 })
                 return
@@ -108,7 +113,7 @@ local function land(uuid, rec)
         if block == nil then
             return      -- the chunk below is still on its way
         end
-        if block.material ~= AIR then
+        if block.occupancy ~= 0 then
             local landed = { x = x + 0.5, y = y + 1.01, z = z + 0.5 }
             if game.move_player(uuid, landed) then
                 rec.landing = nil

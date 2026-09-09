@@ -20,8 +20,13 @@
 -- Two limits of the density compiler shape the code below: 256 ops per
 -- program, and 8 live buffers. A subtree is walked once per place it appears
 -- (no sharing), and evaluation is left to right, so a big subtree goes FIRST
--- in a `min`/`add` and the small one second. `flank.dirt` sits at the op
--- limit: anything added to the terrain field has to come out of the body.
+-- in a `min`/`add` and the small one second.
+--
+-- Sub-node fills ADD: a smooth fill writes its material into the cells where
+-- its field is positive and leaves every other cell as it was (engine
+-- `fill_density_detail`, since 2026-09-09). That is what lets the layers
+-- below be painted one on top of another; the first fill at a surface is the
+-- one that gives it its shape, so it must be the smooth one.
 
 local M = {}
 
@@ -63,17 +68,28 @@ M.BLUFF_AMP = 0.008      -- km: 16-block cliffs
 M.BLUFF_FREQ = 1 / 350
 M.BLUFF_OCTAVES = 2
 M.BLUFF_STEEP = 20.0     -- how sharply the noise is clamped: bigger is steeper
--- Boulders: a high-frequency noise thresholded rare, in the shell of air just
--- above the ground, so the blobs sit on it, half buried.
-M.BOULDER_FREQ = 1 / 7
-M.BOULDER_THRESHOLD = 0.30   -- the noise runs +/-0.42; this keeps a few percent
-M.BOULDER_SHELL = 0.006      -- km above the surface the blobs may reach
+-- Boulders: a fine noise thresholded rare, and made harder to pass the
+-- higher above the ground a cell is, so a blob is widest at the ground and
+-- tapers upward — a rock sitting on the grass, part of it buried, never a
+-- lump hanging in the air.
+M.BOULDER_FREQ = 1 / 8
+M.BOULDER_THRESHOLD = 0.28   -- the noise runs +/-0.42; this keeps a few percent
+M.BOULDER_TAPER = 30.0       -- threshold rises by this per km of height: gone by ~4 blocks
+
+-- The spawn clearing. Nothing in Lua can evaluate the relief, so the one
+-- place a player has to be put down blind is made FLAT: the relief, the
+-- detail and the bluffs fade to nothing within SPAWN_FLAT_R blocks of the
+-- spawn column, and the ground there is exactly the base dome, at a height
+-- `spawn_surface_y` can compute. A meadow in the woods.
+M.SPAWN_X = 15300        -- blocks; in the temperate ring, u ~ 0.067
+M.SPAWN_Z = 0
+M.SPAWN_FLAT_R = 250     -- blocks; full relief again beyond it
 
 -- Body: W(Y) is the half-width in km at Spindle height Y, piecewise linear
 -- through these knots, top to bottom. Above the first knot W is flat; the dome
 -- caps it anyway. The plan's (-63, 0.9) knot is left out: each segment is
--- seven ops, twice, and `flank.dirt` needs them. The needle tapers straight
--- from 2 km wide at -37 to the point at -70.
+-- seven ops, twice. The needle tapers straight from 2 km wide at -37 to the
+-- point at -70.
 M.KNOTS = {
     { 16.5, 59.0 }, { 3.1, 58.5 }, { -8.0, 46.0 }, { -12.0, 30.0 }, { -16.0, 16.0 },
     { -25.0, 6.0 }, { -37.0, 2.0 }, { -70.0, 0.0 },
@@ -105,7 +121,7 @@ M.HOLLOW_R = 37.0
 -- deeper than 1.6 km below the peak, under a valley shallower — the proxy
 -- error the plan accepts until there is an exact depth (B.5).
 M.SKIN_TOP = 0.0015      -- km: the biome's own block, one to two blocks
-M.SKIN_DIRT = 0.005      -- km: dirt under it
+M.SKIN_DIRT = 0.005      -- km: dirt under it, stone below that
 M.GLOAM_D = 1.6          -- km below the base dome
 M.ABYSS_D = 4.0
 
@@ -117,8 +133,7 @@ M.APEX_Y = -63.0
 -- interpolates the block samples down to the cells (1.5x the block cost);
 -- `sampled` asks the field about all 27 cells (5.5x) and only pays off when
 -- a term finer than a block is added. `nil` is block resolution, staircases
--- and all. The shells and the Hollow's ceiling use it too: they have no
--- noise, so it is nearly free there.
+-- and all.
 M.SURFACE_DETAIL = { detail = "smooth" }
 
 -- Node builders ---------------------------------------------------------------
@@ -167,26 +182,41 @@ local function bluffs()
         clamp(mul(noise("bluff", M.BLUFF_FREQ, M.BLUFF_OCTAVES, 1.0), const(M.BLUFF_STEEP)), -1.0, 1.0))
 end
 
+-- 0 at the spawn column, 1 from SPAWN_FLAT_R out: clamp(d^2 / R^2, 0, 1).
+local function spawn_mask()
+    local dx = sub(X(), const(M.SPAWN_X))
+    local dz = sub(Z(), const(M.SPAWN_Z))
+    return clamp(mul(add(mul(dx, dx), mul(dz, dz)), const(1 / (M.SPAWN_FLAT_R * M.SPAWN_FLAT_R))), 0.0, 1.0)
+end
+
 -- T: km below the real surface, positive underground. D plus the relief,
 -- the detail and the bluffs — three noise nodes, every time it is evaluated.
-function M.terrain()
+-- `flank` programs run only near the rim and the underside, far from the
+-- spawn, so they leave the clearing out and keep the ops for the body.
+function M.terrain(flank)
     local relief = mul(relief_mask(), noise("relief", M.RELIEF_FREQ, M.RELIEF_OCTAVES, M.RELIEF_AMP))
     local detail = noise("detail", M.DETAIL_FREQ, M.DETAIL_OCTAVES, M.DETAIL_AMP)
-    return add(add(add(M.depth(), relief), detail), bluffs())
+    local shape = add(add(relief, detail), bluffs())
+    if not flank then
+        shape = mul(shape, spawn_mask())
+    end
+    return add(M.depth(), shape)
 end
 
 -- A band of T between two depths: min(T - lo, -(T - hi)). The negation is a
 -- multiply rather than `sub(hi, T)` so T is never evaluated with a constant
 -- already waiting on the stack. Negative depths are ABOVE the ground.
-function M.terrain_band(lo, hi)
-    return min(sub(M.terrain(), const(lo)), mul(sub(M.terrain(), const(hi)), const(-1.0)))
+function M.terrain_band(lo, hi, flank)
+    return min(sub(M.terrain(flank), const(lo)), mul(sub(M.terrain(flank), const(hi)), const(-1.0)))
 end
 
--- Boulders: in the shell of air just above the surface, where a fine noise
--- is rare enough to make separate blobs.
+-- Boulders: noise - threshold - TAPER * (height above ground). Positive
+-- underground too, which puts bare rock in the skin where a boulder is
+-- buried; the fills that follow do not touch it.
 function M.boulders()
-    return min(M.terrain_band(-M.BOULDER_SHELL, 0.0),
-        sub(noise("boulder", M.BOULDER_FREQ, 2, 1.0), const(M.BOULDER_THRESHOLD)))
+    local height = clamp(mul(M.terrain(false), const(-1.0)), 0.0, 1.0)
+    return sub(sub(noise("boulder", M.BOULDER_FREQ, 2, 1.0), const(M.BOULDER_THRESHOLD)),
+        mul(height, const(M.BOULDER_TAPER)))
 end
 
 -- W(Y) as a sum of clamped ramps on RAW y, so each segment is seven ops.
@@ -248,15 +278,15 @@ M.compile = compile
 M.programs = {}
 local P = M.programs
 P.top = {
-    solid = compile("top.solid", M.terrain()),
-    dirt = compile("top.dirt", M.terrain_band(0.0, M.SKIN_DIRT)),
+    solid = compile("top.solid", M.terrain(false)),
+    stone = compile("top.stone", sub(M.terrain(false), const(M.SKIN_DIRT))),
     gloam = compile("top.gloam", sub(M.depth(), const(M.GLOAM_D))),
     abyss = compile("top.abyss", sub(M.depth(), const(M.ABYSS_D))),
     boulders = compile("top.boulders", M.boulders()),
 }
 P.flank = {
-    solid = compile("flank.solid", min(M.terrain(), M.body())),
-    dirt = compile("flank.dirt", min(M.terrain_band(0.0, M.SKIN_DIRT), M.body())),
+    solid = compile("flank.solid", min(M.terrain(true), M.body())),
+    stone = compile("flank.stone", min(sub(M.terrain(true), const(M.SKIN_DIRT)), M.body())),
     gloam = compile("flank.gloam", min(sub(M.depth(), const(M.GLOAM_D)), M.body())),
     abyss = compile("flank.abyss", min(sub(M.depth(), const(M.ABYSS_D)), M.body())),
 }
@@ -266,10 +296,11 @@ for _, shell in ipairs(M.SHELLS) do
 end
 P.hollow = compile("hollow", M.inside(M.HOLLOW_R))
 
--- Plain-Lua evaluations of the same curves, for the generator's gate. These
--- are BOUNDS on a chunk, not samples of the field: the fields are the density
--- programs above, and these only decide which programs are worth running.
--- Ordinary + - * / on doubles is IEEE-exact everywhere; no libm here.
+-- Plain-Lua evaluations of the same curves, for the generator's gate and the
+-- spawn. These are BOUNDS on a chunk, not samples of the field: the fields
+-- are the density programs above, and these only decide which programs are
+-- worth running. Ordinary + - * / on doubles is IEEE-exact everywhere; no
+-- libm here.
 function M.dome_at(u_value)
     return M.SUMMIT - M.DOME_DROP * u_value * (2.0 - u_value)
 end
@@ -291,6 +322,12 @@ function M.half_width_at(Y_km)
         end
     end
     return 0.0
+end
+-- The world y of the ground at the spawn column, where the relief is masked
+-- to nothing and the surface is the base dome exactly.
+function M.spawn_surface_y()
+    local r2_km = (M.SPAWN_X * M.SPAWN_X + M.SPAWN_Z * M.SPAWN_Z) * 1e-6
+    return M.Y0 + 1000.0 * M.dome_at(r2_km / (M.R_DISC * M.R_DISC))
 end
 
 return M

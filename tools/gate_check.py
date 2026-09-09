@@ -91,15 +91,20 @@ def classify(cx, cy, cz):
     tail = False
     if Yhi < APEX_Y: base, tail = "apex_stone", True
     elif Yhi < TAIL_Y: base, tail = "marrow", True
+    skin = (not tail) and tmin < SKIN_DIRT
+    if skin: base = "dirt"
     fills = []
     if inside_body and tmin > 0: cls = "filled"; fills.append(f"fill_all({base})")
     else: cls = "carved"; fills.append(f"{V}.solid->{base}")
     if not tail:
+        if skin:
+            cls = "surface"
+            if tmax > SKIN_DIRT: fills.append(f"{V}.stone")
         if level < 1 and dmax > GLOAM_D - SAFETY: fills.append(f"{V}.gloam")
         if level < 2 and dmax > ABYSS_D - SAFETY: fills.append(f"{V}.abyss")
-        if tmin < SKIN_DIRT:
-            cls = "surface"; fills.append(f"{V}.dirt")
-            if inside_body and tmin < SKIN_TOP: fills.append("biomes")
+        if skin and inside_body:
+            if tmin < SKIN_TOP: fills.append("biomes")
+            fills.append("boulders?")
     for sid, outer, inner in SHELLS:
         if e2lo < outer * outer and e2hi > inner * inner: fills.append(f"shell.{sid}")
     if e2lo < HOLLOW_R * HOLLOW_R: fills.append("hollow")
@@ -123,7 +128,7 @@ def cube(x, y, z, half):
             for cz in range((z - half) // 16, (z + half) // 16):
                 cls, _, fills = classify(cx, cy, cz)
                 counts[cls] += 1; total += 1
-                if any(f.startswith(("top.solid", "top.dirt", "flank.", "biomes")) for f in fills): noisy += 1
+                if any(f.startswith(("top.solid", "top.stone", "flank.", "biomes")) for f in fills): noisy += 1
     print(f"\n== cube {2*half} blocks around ({x},{y},{z}): {total} chunks ==")
     for cls, n in counts.most_common(): print(f"  {cls:8s} {n:6d}  {100*n/total:5.1f}%")
     print(f"  chunks that run noise: {noisy} ({100*noisy/total:.1f}%)")

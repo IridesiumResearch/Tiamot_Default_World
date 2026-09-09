@@ -14,14 +14,12 @@
 -- bands (gloam, abyss) follow D, so a chunk two kilometres down pays for no
 -- noise at all.
 --
--- Fills run in order and later ones overwrite: stone wherever it is solid,
--- gloam stone below 1.6 km, abyss stone below 4 km, then the skin bands on
--- top, boulders on the ground, then the core stack over the middle, then the
--- Hollow carved out of it.
---
--- Every fill a player can see runs at sub-node resolution (shape.SURFACE_DETAIL),
--- so slopes are slopes rather than staircases. The engine refines only the
--- blocks a surface crosses, so it is about 1.5x the block-resolution cost.
+-- **The first fill at a surface gives it its shape**, and sub-node fills
+-- only ADD cells (see shape.lua), so the order is: the whole solid body as
+-- DIRT, smooth — that is the surface; then stone from five blocks down, the
+-- deep bands, the biome's own top, and boulders, each writing only where it
+-- is positive and leaving the surface's shape alone. Then the core stack
+-- over the middle, and the Hollow carved out of it.
 --
 -- Nothing here samples a field. Everything in Lua is a BOUND on a chunk,
 -- computed with + - * / on doubles, which is IEEE-exact everywhere.
@@ -128,6 +126,13 @@ game.register_on_generate(function(buf, pos)
     elseif Yhi < shape.TAIL_Y then
         base, tail = blocks.marrow, true
     end
+    -- Within reach of the skin, the body is painted as dirt first and stone
+    -- is put back from five blocks down: that keeps the surface's shape in
+    -- one smooth fill.
+    local skin = not tail and tmin < shape.SKIN_DIRT
+    if skin then
+        base = blocks.dirt
+    end
 
     if inside_body and tmin > 0 then
         buf:fill_all(base)
@@ -138,6 +143,12 @@ game.register_on_generate(function(buf, pos)
     end
 
     if not tail then
+        if skin then
+            stats.surface = stats.surface + 1
+            if tmax > shape.SKIN_DIRT then
+                buf:fill_density(V.stone, blocks.stone, DETAIL)
+            end
+        end
         -- The deep bands, exact and free of noise.
         if level < 1 and dmax > shape.GLOAM_D - SAFETY then
             buf:fill_density(V.gloam, blocks.gloam_stone, DETAIL)
@@ -145,23 +156,18 @@ game.register_on_generate(function(buf, pos)
         if level < 2 and dmax > shape.ABYSS_D - SAFETY then
             buf:fill_density(V.abyss, blocks.abyss_stone, DETAIL)
         end
-        -- The skin, wherever the real surface can be.
-        if tmin < shape.SKIN_DIRT then
-            stats.surface = stats.surface + 1
-            buf:fill_density(V.dirt, blocks.dirt, DETAIL)
-            if inside_body then
-                if tmin < shape.SKIN_TOP then
-                    for _, biome in ipairs(spindle.surface_biomes_in(ulo, uhi)) do
-                        for _, fill in ipairs(biome.fills) do
-                            buf:fill_density(fill.field, fill.material, DETAIL)
-                        end
+        if skin and inside_body then
+            -- The biome's own top, and boulders on some chunks and not
+            -- others, so they come in groups rather than as an even scatter.
+            if tmin < shape.SKIN_TOP then
+                for _, biome in ipairs(spindle.surface_biomes_in(ulo, uhi)) do
+                    for _, fill in ipairs(biome.fills) do
+                        buf:fill_density(fill.field, fill.material, DETAIL)
                     end
                 end
-                -- Boulders on some chunks and not others, so they come in
-                -- groups rather than as an even scatter.
-                if game.rng_stream(pos, "boulders"):below(BOULDERS_EVERY) == 0 then
-                    buf:fill_density(P.top.boulders, blocks.stone, DETAIL)
-                end
+            end
+            if game.rng_stream(pos, "boulders"):below(BOULDERS_EVERY) == 0 then
+                buf:fill_density(P.top.boulders, blocks.stone, DETAIL)
             end
         end
     end
