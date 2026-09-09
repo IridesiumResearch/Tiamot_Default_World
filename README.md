@@ -57,14 +57,15 @@ and names any biome that is registered but not yet built.
 ## What the terrain is made of
 
 - **Relief**: 3D fBm with a vertical gradient, masked so the Crown is a
-  massif (±1.7 km) and the rings roll (±0.42 km on 12 km), plus the hills you
-  actually walk over: low and rolling, ±42 blocks on 800 m, two octaves so
-  the crests are soft.
-- **Gullies**: a V-groove 3½ blocks deep and ~7 wide along the zero
-  crossings of a slow noise — meandering, connected creek beds — with wet
-  gravel along the floor.
-- **Bluffs**: a hard-clamped noise term that makes terraces; off for the
-  woodland (`BLUFF_AMP = 0`), kept for rings that want them.
+  massif (±1.7 km) and the rings roll gently (±150 m on 12 km), plus the
+  hills you actually walk over: low and rolling, ±15 blocks on 290 m, two
+  octaves so the crests are soft.
+- **Gullies**: a groove 2½ blocks deep and ~9 wide along the zero crossings
+  of a slow noise — meandering, connected creek beds — with a fine noise
+  wobbling the banks and roughening the floor, and wet gravel along it.
+- **Bluffs**: a clamped noise term that makes small rounded steps, in
+  patches over about a third of the ground — detail on hills that were
+  otherwise too smooth.
 - **Rocks**: not generated — grown by random tick on grass like the trees,
   as schematics: a point, a squat ellipsoid round it rounded to the cell,
   three quarters buried, in patches (one 32-block square in four).

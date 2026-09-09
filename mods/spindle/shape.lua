@@ -55,39 +55,48 @@ M.DOME_DROP = 2.5        -- km from summit to rim (rim at +16.5)
 M.RELIEF_AMP = 4.0       -- km, before the mask
 M.RELIEF_FREQ = 1 / 12000
 M.RELIEF_OCTAVES = 3     -- 12, 6 and 3 km; the detail term carries on from 1.5
-M.RELIEF_FLOOR = 0.15    -- share of relief left outside the Crown (60% of 0.25, 2026-09-09)
+M.RELIEF_FLOOR = 0.09    -- share of relief left outside the Crown (0.25, then 60%, then 60% again)
 M.RELIEF_RAMP = 27.0     -- mask = clamp(1 - RAMP * (u - CROWN_U), FLOOR, 1)
 M.CROWN_U = 0.0064
--- Detail: the hills you walk over. Low and rolling, with soft crests: +/-25
--- blocks on a 480 m wavelength is a 17% grade at the steepest, and two
+-- Detail: the hills you walk over. Low and rolling, with soft crests: +/-15
+-- blocks on a 290 m wavelength is a 17% grade at the steepest, and two
 -- octaves rather than three is what keeps the crests soft. (The woodland
--- brief, 2026-09-09, then "60% of that" the same day — both the height and
--- the width. Other rings will want their own terms, masked.)
-M.DETAIL_AMP = 0.06      -- km, x0.42 = +/-25 blocks
-M.DETAIL_FREQ = 1 / 480
-M.DETAIL_OCTAVES = 2     -- 480 and 240 m. Noise cost is per octave, and the
+-- brief, 2026-09-09, then "60% of that" twice the same day — both the
+-- height and the width. Other rings will want their own terms, masked.)
+M.DETAIL_AMP = 0.036     -- km, x0.42 = +/-15 blocks
+M.DETAIL_FREQ = 1 / 290
+M.DETAIL_OCTAVES = 2     -- 290 and 145 m. Noise cost is per octave, and the
                          -- terrain is evaluated once per skin fill.
 -- Gullies: a V-shaped groove cut along the zero crossings of a slow noise.
 -- Those crossings are meandering, connected lines, which is what a creek
 -- bed looks like from above. Depth GULLY_DEPTH at the line, sloping up to
 -- nothing where |noise| reaches GULLY_WIDTH — about seven blocks across.
-M.GULLY_DEPTH = 0.005    -- km: five blocks
+M.GULLY_DEPTH = 0.0025   -- km: two and a half blocks
 M.GULLY_WIDTH = 0.04     -- in the noise's own units (it runs +/-0.42): ~9 blocks across
 M.GULLY_FREQ = 1 / 260
 M.GULLY_OCTAVES = 2
+-- Roughness: a fine noise that moves each bank in and out by a block or so
+-- and makes the floor uneven, so the groove is not a perfect V drawn along
+-- a perfect line. Depth varies by up to GULLY_ROUGH of itself.
+M.GULLY_ROUGH = 0.4
+M.GULLY_ROUGH_FREQ = 1 / 9
+M.GULLY_BANK_WOBBLE = 0.012   -- in the noise's units: about +/-1 block of bank
 -- Bluffs: a low-frequency noise clamped hard makes plateaus at +/-BLUFF_AMP
 -- with a short, steep step between them wherever the noise crosses zero.
 -- Clamped that hard the steps run along EVERY zero crossing, which as a
 -- constant was a wall every two hundred blocks in a random direction — so
 -- the term is masked by a second, slower noise, and shows only in patches
 -- that cover about a fifth of the ground.
-M.BLUFF_AMP = 0.0        -- km; off for the woodland brief (0.004 is 8-block steps)
-M.BLUFF_FREQ = 1 / 350
+-- Small and soft for the woodland — two-block steps with rounded edges,
+-- in patches — "clamped hill detail here and there" on hills that were
+-- otherwise too smooth. The Ember Ridge will want 0.008 and STEEP 20.
+M.BLUFF_AMP = 0.0012     -- km: steps of about two blocks
+M.BLUFF_FREQ = 1 / 140
 M.BLUFF_OCTAVES = 1
-M.BLUFF_STEEP = 20.0     -- how sharply the noise is clamped: bigger is steeper
-M.BLUFF_PATCH_FREQ = 1 / 2000
-M.BLUFF_PATCH_MIN = 0.12 -- the patch noise (+/-0.42) must exceed this
-M.BLUFF_PATCH_RAMP = 20.0 -- how quickly a patch fades in past that
+M.BLUFF_STEEP = 10.0     -- how sharply the noise is clamped: bigger is steeper
+M.BLUFF_PATCH_FREQ = 1 / 900
+M.BLUFF_PATCH_MIN = 0.08 -- the patch noise (+/-0.42) must exceed this: a third of the ground
+M.BLUFF_PATCH_RAMP = 15.0 -- how quickly a patch fades in past that
 -- The plain. Nothing in Lua can evaluate the relief, so the one place a
 -- player has to be put down blind is where the relief is SMALL by
 -- construction: a ring of the disc, centred on the spawn radius and about
@@ -219,10 +228,17 @@ local function plain_mask()
 end
 
 -- How deep in a gully a point is, 0..1: 1 on the creek line, 0 at the
--- gully's edge. The same noise node in two programs is the same field.
+-- gully's edge. The same noise node in two programs is the same field. A
+-- fine noise wobbles the banks (added to |n| before the clamp) and roughens
+-- the floor (scaling the result), so the profile is not a perfect V.
+local function rough()
+    return noise("gully_rough", M.GULLY_ROUGH_FREQ, 1, 1.0)
+end
 local function gully_depth()
-    local groove = abs(noise("gully", M.GULLY_FREQ, M.GULLY_OCTAVES, 1.0))
-    return clamp(sub(const(1.0), mul(groove, const(1.0 / M.GULLY_WIDTH))), 0.0, 1.0)
+    local groove = add(abs(noise("gully", M.GULLY_FREQ, M.GULLY_OCTAVES, 1.0)),
+        mul(rough(), const(M.GULLY_BANK_WOBBLE)))
+    local profile = clamp(sub(const(1.0), mul(groove, const(1.0 / M.GULLY_WIDTH))), 0.0, 1.0)
+    return mul(profile, add(const(1.0), mul(rough(), const(M.GULLY_ROUGH))))
 end
 -- Positive on the floor of a gully — the inner two fifths of its width —
 -- for the creek-bed material. Multiplied by the plain mask's complement is
