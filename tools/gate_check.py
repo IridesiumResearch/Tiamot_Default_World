@@ -19,9 +19,11 @@ R_DISC = 59.0
 K = 5.0
 STACK_Y = 2.0
 SUMMIT, DOME_DROP = 19.0, 2.5
-RELIEF_AMP, RELIEF_FLOOR, RELIEF_RAMP, CROWN_U = 4.0, 0.5, 27.0, 0.0064
-DETAIL_AMP = 0.5
-BLUFF_AMP = 0.008
+RELIEF_AMP, RELIEF_FLOOR, RELIEF_RAMP, CROWN_U = 4.0, 0.25, 27.0, 0.0064
+DETAIL_AMP = 0.36
+BLUFF_AMP = 0.0
+SPAWN_X, SPAWN_Z = 15300, 0
+PLAIN_HALF_WIDTH_U, PLAIN_FLOOR = 0.0125, 0.1
 KNOTS = [(16.5, 59.0), (3.1, 58.5), (-8.0, 46.0), (-12.0, 30.0), (-16.0, 16.0),
          (-25.0, 6.0), (-37.0, 2.0), (-70.0, 0.0)]
 FLANK_WARP = 0.15
@@ -48,6 +50,10 @@ STACK_Y_BLOCKS = STACK_Y * 1000 + Y0
 HOLLOW_IN = (HOLLOW_R - SAFETY) ** 2
 
 def dome_at(u): return SUMMIT - DOME_DROP * u * (2.0 - u)
+PLAIN_U = (SPAWN_X**2 + SPAWN_Z**2) * 1e-6 / (R_DISC * R_DISC)
+def plain_at(u):
+    d = (u - PLAIN_U) / PLAIN_HALF_WIDTH_U
+    return PLAIN_FLOOR + (1 - PLAIN_FLOOR) * min(1.0, d * d)
 def mask_at(u):
     m = 1.0 + RELIEF_RAMP * CROWN_U - RELIEF_RAMP * u
     return max(RELIEF_FLOOR, min(1.0, m))
@@ -75,7 +81,8 @@ def classify(cx, cy, cz):
     ulo, uhi = r2lo / R2_DISC, r2hi / R2_DISC
     Ylo, Yhi = (y0 - Y0) * SCALE, (y1 - Y0) * SCALE
     dmax = dome_at(ulo) - Ylo; dmin = dome_at(uhi) - Yhi
-    relief = NOISE_BOUND * (RELIEF_AMP * mask_at(ulo) + DETAIL_AMP) + BLUFF_AMP + SAFETY
+    plain = max(plain_at(ulo), plain_at(uhi))
+    relief = plain * (NOISE_BOUND * (RELIEF_AMP * mask_at(ulo) + DETAIL_AMP) + BLUFF_AMP) + SAFETY
     tmax, tmin = dmax + relief, dmin - relief
     w_hi = half_width_at(Yhi) * WARP_HI + SAFETY
     w_lo = half_width_at(Ylo) * WARP_LO - SAFETY

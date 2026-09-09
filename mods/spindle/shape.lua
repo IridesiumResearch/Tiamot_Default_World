@@ -48,23 +48,28 @@ M.DOME_DROP = 2.5        -- km from summit to rim (rim at +16.5)
 -- Relief: 3D fBm with a vertical gradient of 1 km per km. The fractal runs to
 -- roughly +/-0.42, so RELIEF_AMP = 4 is +/-1.7 km of mountain at the Crown
 -- before the mask. The mask holds full relief inside the Crown (u < 0.0064)
--- and ramps to RELIEF_FLOOR by u ~ 0.034 — half, since 2026-09-08's "the
--- scale is a little small": the temperate rings now roll at +/-0.84 km.
+-- and ramps to RELIEF_FLOOR by u ~ 0.034, so the rings roll at +/-0.42 km on
+-- a 12 km wavelength. Doubling this (tried 2026-09-08) made the rings a tilt
+-- into kilometre walls; what reads as "bigger" at a player's scale is the
+-- DETAIL term below — shorter hills, not taller tilts.
 M.RELIEF_AMP = 4.0       -- km, before the mask
 M.RELIEF_FREQ = 1 / 12000
 M.RELIEF_OCTAVES = 5
-M.RELIEF_FLOOR = 0.5     -- share of relief left outside the Crown
+M.RELIEF_FLOOR = 0.25    -- share of relief left outside the Crown
 M.RELIEF_RAMP = 27.0     -- mask = clamp(1 - RAMP * (u - CROWN_U), FLOOR, 1)
 M.CROWN_U = 0.0064
--- Detail: doubled with the relief, and its wavelength with it so the slopes
--- stay under the overhang limit (relief < 0.42 * wavelength, plan A.3).
-M.DETAIL_AMP = 0.5       -- km, ~200 blocks of hill on top of the relief
-M.DETAIL_FREQ = 1 / 1200
+-- Detail: the hills you walk over. +/-150 blocks on a 1.5 km wavelength is a
+-- 40% grade at the steepest, well under the overhang limit (relief < 0.42 *
+-- wavelength, plan A.3).
+M.DETAIL_AMP = 0.36      -- km, x0.42 = +/-150 blocks
+M.DETAIL_FREQ = 1 / 1500
 M.DETAIL_OCTAVES = 3
 -- Bluffs: a low-frequency noise clamped hard makes plateaus at +/-BLUFF_AMP
--- with a short, steep step between them wherever the noise crosses zero —
--- a terrace, or a cliff of twice BLUFF_AMP, every few hundred blocks.
-M.BLUFF_AMP = 0.008      -- km: 16-block cliffs
+-- with a short, steep step between them wherever the noise crosses zero.
+-- OFF (0): clamped that hard, the steps run along every zero crossing of the
+-- noise, which is a wall every two hundred blocks in a random direction.
+-- Terraces want a mask that puts them in a few places, not a constant.
+M.BLUFF_AMP = 0.0        -- km; 0.008 is 16-block cliffs
 M.BLUFF_FREQ = 1 / 350
 M.BLUFF_OCTAVES = 2
 M.BLUFF_STEEP = 20.0     -- how sharply the noise is clamped: bigger is steeper
@@ -73,17 +78,22 @@ M.BLUFF_STEEP = 20.0     -- how sharply the noise is clamped: bigger is steeper
 -- tapers upward — a rock sitting on the grass, part of it buried, never a
 -- lump hanging in the air.
 M.BOULDER_FREQ = 1 / 8
-M.BOULDER_THRESHOLD = 0.28   -- the noise runs +/-0.42; this keeps a few percent
-M.BOULDER_TAPER = 30.0       -- threshold rises by this per km of height: gone by ~4 blocks
+M.BOULDER_THRESHOLD = 0.33   -- the noise runs +/-0.42; this keeps about one percent
+M.BOULDER_TAPER = 60.0       -- threshold rises by this per km of height: gone by ~2 blocks
 
--- The spawn clearing. Nothing in Lua can evaluate the relief, so the one
--- place a player has to be put down blind is made FLAT: the relief, the
--- detail and the bluffs fade to nothing within SPAWN_FLAT_R blocks of the
--- spawn column, and the ground there is exactly the base dome, at a height
--- `spawn_surface_y` can compute. A meadow in the woods.
+-- The plain. Nothing in Lua can evaluate the relief, so the one place a
+-- player has to be put down blind is where the relief is SMALL by
+-- construction: a ring of the disc, centred on the spawn radius and about
+-- three kilometres wide, where the relief and the detail are scaled down to
+-- PLAIN_FLOOR of themselves. The ground there is within about a hundred
+-- blocks of the base dome, which a first visit can see from where it is
+-- dropped, so it lands in one look and never hops. The plan's Greensward.
+-- (A flat clearing was tried first: cut into +/-1 km of relief it is a
+-- crater with a wall round it.)
 M.SPAWN_X = 15300        -- blocks; in the temperate ring, u ~ 0.067
 M.SPAWN_Z = 0
-M.SPAWN_FLAT_R = 250     -- blocks; full relief again beyond it
+M.PLAIN_HALF_WIDTH_U = 0.0125   -- in u: about 1.4 km of radius either side
+M.PLAIN_FLOOR = 0.1             -- share of the relief left at the plain's centre
 
 -- Body: W(Y) is the half-width in km at Spindle height Y, piecewise linear
 -- through these knots, top to bottom. Above the first knot W is flat; the dome
@@ -182,23 +192,29 @@ local function bluffs()
         clamp(mul(noise("bluff", M.BLUFF_FREQ, M.BLUFF_OCTAVES, 1.0), const(M.BLUFF_STEEP)), -1.0, 1.0))
 end
 
--- 0 at the spawn column, 1 from SPAWN_FLAT_R out: clamp(d^2 / R^2, 0, 1).
-local function spawn_mask()
-    local dx = sub(X(), const(M.SPAWN_X))
-    local dz = sub(Z(), const(M.SPAWN_Z))
-    return clamp(mul(add(mul(dx, dx), mul(dz, dz)), const(1 / (M.SPAWN_FLAT_R * M.SPAWN_FLAT_R))), 0.0, 1.0)
+-- PLAIN_FLOOR at the plain's centre radius, 1 from PLAIN_HALF_WIDTH_U out:
+-- FLOOR + (1 - FLOOR) * clamp((u - u_plain)^2 / w^2, 0, 1).
+M.PLAIN_U = (M.SPAWN_X * M.SPAWN_X + M.SPAWN_Z * M.SPAWN_Z) * 1e-6 / (M.R_DISC * M.R_DISC)
+local function plain_mask()
+    local function du() return sub(u(), const(M.PLAIN_U)) end
+    local ramp = clamp(mul(mul(du(), du()), const(1 / (M.PLAIN_HALF_WIDTH_U * M.PLAIN_HALF_WIDTH_U))), 0.0, 1.0)
+    return add(const(M.PLAIN_FLOOR), mul(ramp, const(1.0 - M.PLAIN_FLOOR)))
 end
 
--- T: km below the real surface, positive underground. D plus the relief,
--- the detail and the bluffs — three noise nodes, every time it is evaluated.
--- `flank` programs run only near the rim and the underside, far from the
--- spawn, so they leave the clearing out and keep the ops for the body.
+-- T: km below the real surface, positive underground. D plus the relief
+-- and the detail (and the bluffs, when they are on) — a noise node each,
+-- every time it is evaluated. `flank` programs run only near the rim and the
+-- underside, far from the plain, so they leave it out and keep the ops for
+-- the body.
 function M.terrain(flank)
     local relief = mul(relief_mask(), noise("relief", M.RELIEF_FREQ, M.RELIEF_OCTAVES, M.RELIEF_AMP))
     local detail = noise("detail", M.DETAIL_FREQ, M.DETAIL_OCTAVES, M.DETAIL_AMP)
-    local shape = add(add(relief, detail), bluffs())
+    local shape = add(relief, detail)
+    if M.BLUFF_AMP > 0 then
+        shape = add(shape, bluffs())
+    end
     if not flank then
-        shape = mul(shape, spawn_mask())
+        shape = mul(shape, plain_mask())
     end
     return add(M.depth(), shape)
 end
@@ -323,11 +339,19 @@ function M.half_width_at(Y_km)
     end
     return 0.0
 end
--- The world y of the ground at the spawn column, where the relief is masked
--- to nothing and the surface is the base dome exactly.
-function M.spawn_surface_y()
-    local r2_km = (M.SPAWN_X * M.SPAWN_X + M.SPAWN_Z * M.SPAWN_Z) * 1e-6
-    return M.Y0 + 1000.0 * M.dome_at(r2_km / (M.R_DISC * M.R_DISC))
+-- How much of the relief the plain leaves at a given u; the gate takes the
+-- larger value at a chunk's two ends, which is the most since the curve is
+-- a bowl.
+function M.plain_at(u_value)
+    local d = (u_value - M.PLAIN_U) / M.PLAIN_HALF_WIDTH_U
+    local ramp = d * d
+    if ramp > 1.0 then ramp = 1.0 end
+    return M.PLAIN_FLOOR + (1.0 - M.PLAIN_FLOOR) * ramp
+end
+-- The world y of the base dome at the spawn column. The ground is within
+-- PLAIN_FLOOR of the full relief of it.
+function M.spawn_base_y()
+    return M.Y0 + 1000.0 * M.dome_at(M.PLAIN_U)
 end
 
 return M

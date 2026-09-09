@@ -57,18 +57,22 @@ and names any biome that is registered but not yet built.
 ## What the terrain is made of
 
 - **Relief**: 3D fBm with a vertical gradient, masked so the Crown is a
-  massif (±1.7 km) and the rings roll (±0.84 km), plus a 1.2 km-wavelength
-  detail term (±0.2 km).
-- **Bluffs**: a low-frequency noise clamped hard, added to the terrain field,
-  gives plateaus with 16-block steps between them — terraces and small cliffs
-  every few hundred blocks.
+  massif (±1.7 km) and the rings roll (±0.42 km on 12 km), plus the hills you
+  actually walk over: a 1.5 km-wavelength detail term (±150 blocks).
+- **Bluffs**: a hard-clamped noise term that makes terraces; **off** for now
+  (`BLUFF_AMP = 0`) — as a constant it puts a wall along every zero crossing.
+  It wants a mask that places it, not a constant.
 - **Boulders**: a fine noise thresholded rare, with the threshold rising
   with height above the ground so a blob is widest at the grass and tapers
   upward — rocks sitting on the ground, part buried, never hanging. On one
   surface chunk in three, so they come in groups.
-- **The spawn clearing**: the relief fades to nothing within 250 blocks of
-  the spawn column, so the ground height there is known and a first visit
-  lands from three blocks up rather than being searched for.
+- **The plain**: a ~3 km-wide ring at the spawn radius where the relief is
+  scaled to a tenth, so the ground is within ~100 blocks of the base dome and
+  a first visit lands in one look with no hopping through unloaded chunks.
+- **Dev switch**: `spindle.config.everywhere` in `init.lua` names a built
+  biome and puts it over the whole surface, ignoring its ring and humidity,
+  so one biome can be looked at on its own. Currently `temperate_woodlands`;
+  set it to `nil` for the real world.
 - **Sub-node surfaces**: every fill a player can see runs with
   `{ detail = "smooth" }`, so slopes are slopes. Fills ADD at cell resolution
   (engine `fill_density_detail`, fixed 2026-09-09), so the layers are painted

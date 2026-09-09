@@ -43,12 +43,16 @@ local shape = spindle.shape
 spindle.build_biome("temperate_woodlands", function(ctx)
     local n = ctx.node
     local ring = layers.ring_by_id.temperate
-    local humidity = n.noise("humidity", HUMIDITY_FREQ, 2, 1.0)
-    local mask = n.min(shape.ring(ring.u[1], ring.u[2]), n.sub(humidity, n.const(HUMIDITY_MIN)))
     -- Positive where the mask holds AND we are in the top blocks under the
     -- real surface. The band goes first in the min: it is the big subtree.
-    local field = shape.compile("biome.woodlands.grass",
-        n.min(shape.terrain_band(0.0, shape.SKIN_TOP, false), mask))
+    local band = shape.terrain_band(0.0, shape.SKIN_TOP, false)
+    local spec = band
+    if not ctx.everywhere then
+        local humidity = n.noise("humidity", HUMIDITY_FREQ, 2, 1.0)
+        local mask = n.min(shape.ring(ring.u[1], ring.u[2]), n.sub(humidity, n.const(HUMIDITY_MIN)))
+        spec = n.min(band, mask)
+    end
+    local field = shape.compile("biome.woodlands.grass", spec)
     return { { field = field, material = blocks.grass } }
 end)
 
@@ -66,6 +70,9 @@ end
 -- Whether a grass block at (x, z) is in this biome's ring. Integer
 -- arithmetic on block coordinates; exact.
 local function in_ring(x, z)
+    if spindle.config.everywhere == "temperate_woodlands" then
+        return true
+    end
     local ring = layers.ring_by_id.temperate
     local r2 = x * x + z * z
     local R2 = shape.R_DISC * shape.R_DISC * 1e6

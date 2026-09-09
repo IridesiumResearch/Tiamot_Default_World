@@ -39,7 +39,7 @@ local WARP_HI = 1.0 + shape.FLANK_WARP * NOISE_BOUND
 local WARP_LO = 1.0 - shape.FLANK_WARP * NOISE_BOUND
 local STACK_Y_BLOCKS = shape.STACK_Y * 1000 + shape.Y0
 local HOLLOW_IN = (shape.HOLLOW_R - SAFETY) * (shape.HOLLOW_R - SAFETY)
-local BOULDERS_EVERY = 3          -- one surface chunk in this many gets the boulder field
+local BOULDERS_EVERY = 6          -- one surface chunk in this many gets the boulder field
 
 -- Chunk-class counters, logged now and then so the cost mix is visible.
 local stats = { air = 0, hollow = 0, filled = 0, carved = 0, surface = 0, shells = 0, total = 0 }
@@ -90,8 +90,9 @@ game.register_on_generate(function(buf, pos)
     local dmax = shape.dome_at(ulo) - Ylo
     local dmin = shape.dome_at(uhi) - Yhi
     -- T, the real depth: D plus whatever the relief, detail and bluffs can add.
-    local relief = NOISE_BOUND * (shape.RELIEF_AMP * shape.mask_at(ulo) + shape.DETAIL_AMP)
-        + shape.BLUFF_AMP + SAFETY
+    local plain = math.max(shape.plain_at(ulo), shape.plain_at(uhi))
+    local relief = plain * (NOISE_BOUND * (shape.RELIEF_AMP * shape.mask_at(ulo) + shape.DETAIL_AMP)
+        + shape.BLUFF_AMP) + SAFETY
     local tmax = dmax + relief
     local tmin = dmin - relief
 

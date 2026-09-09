@@ -65,7 +65,13 @@ function spindle.build_biome(id, build)
     local biome = spindle.biomes[id]
     assert(biome, "build_biome: no biome called " .. tostring(id))
     assert(not biome.fills, "biome built twice: " .. id)
-    local ctx = { shape = spindle.shape, blocks = spindle.blocks, layers = spindle.layers, node = spindle.shape.node, sub = spindle.shape.sub }
+    local ctx = {
+        shape = spindle.shape, blocks = spindle.blocks, layers = spindle.layers,
+        node = spindle.shape.node, sub = spindle.shape.sub,
+        -- True when this biome is being put over the whole surface: leave
+        -- the ring and humidity masks out of the fills.
+        everywhere = spindle.config.everywhere == id,
+    }
     biome.fills = build(ctx)
     assert(type(biome.fills) == "table", "build for " .. id .. " must return a list of fills")
     for i, fill in ipairs(biome.fills) do
@@ -86,6 +92,14 @@ end
 -- the generator, so it walks a short list and allocates one table.
 function spindle.surface_biomes_in(u_lo, u_hi)
     local found = {}
+    local only = spindle.config.everywhere
+    if only then
+        local biome = spindle.biomes[only]
+        if biome and biome.fills then
+            found[1] = biome
+        end
+        return found
+    end
     for _, biome in ipairs(spindle.areas.surface.biomes) do
         if biome.fills and biome.ring then
             local ring = spindle.layers.ring_by_id[biome.ring]

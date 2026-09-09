@@ -18,16 +18,18 @@
 --     again when they leave, so a dropped connection loses at most a few
 --     steps.
 
--- The spawn clearing: shape.lua flattens the relief around this column, so
--- the ground height there is known and the drop is a couple of blocks.
+-- The plain: shape.lua scales the relief down around this radius, so the
+-- ground is within about a hundred blocks of the base dome and one look down
+-- from SPAWN_ABOVE finds it — no hopping through unloaded chunks.
+local SPAWN_ABOVE = 110
 local SPAWN = {
     x = spindle.shape.SPAWN_X + 0.5,
-    y = spindle.shape.spawn_surface_y() + 3,
+    y = spindle.shape.spawn_base_y() + SPAWN_ABOVE,
     z = spindle.shape.SPAWN_Z + 0.5,
 }
 local SAMPLE_EVERY = 10        -- ticks between position samples
 local SAVE_EVERY = 400         -- ticks between writes to storage
-local SCAN_DOWN = 180          -- blocks searched below a landing player
+local SCAN_DOWN = 190          -- blocks searched below a landing player (within the vertical view)
 local HOP = 160                -- blocks dropped when all of that is air
 local GIVE_UP_AFTER = 1200     -- ticks (one minute) before a landing is abandoned
 

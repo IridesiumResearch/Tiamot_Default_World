@@ -16,6 +16,13 @@
 
 spindle = {}
 
+-- Development switches. `everywhere` names a built surface biome and puts it
+-- over the WHOLE surface, ignoring its ring and humidity, so one biome can be
+-- looked at on its own while it is being made. Set it to nil for the world.
+spindle.config = {
+    everywhere = "temperate_woodlands",
+}
+
 -- The host reports a failed load as "errored in init.lua" and nothing more,
 -- so say which file and what the error was before letting it through.
 local function load(name)
