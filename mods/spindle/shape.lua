@@ -54,7 +54,7 @@ M.DOME_DROP = 2.5        -- km from summit to rim (rim at +16.5)
 -- DETAIL term below — shorter hills, not taller tilts.
 M.RELIEF_AMP = 4.0       -- km, before the mask
 M.RELIEF_FREQ = 1 / 12000
-M.RELIEF_OCTAVES = 5
+M.RELIEF_OCTAVES = 3     -- 12, 6 and 3 km; the detail term carries on from 1.5
 M.RELIEF_FLOOR = 0.25    -- share of relief left outside the Crown
 M.RELIEF_RAMP = 27.0     -- mask = clamp(1 - RAMP * (u - CROWN_U), FLOOR, 1)
 M.CROWN_U = 0.0064
@@ -63,7 +63,9 @@ M.CROWN_U = 0.0064
 -- wavelength, plan A.3).
 M.DETAIL_AMP = 0.36      -- km, x0.42 = +/-150 blocks
 M.DETAIL_FREQ = 1 / 1500
-M.DETAIL_OCTAVES = 3
+M.DETAIL_OCTAVES = 3     -- 1.5 km, 750 and 375 m. Noise cost is per octave:
+                         -- the terrain is evaluated two or three times per
+                         -- surface chunk, so every octave here is paid thrice.
 -- Bluffs: a low-frequency noise clamped hard makes plateaus at +/-BLUFF_AMP
 -- with a short, steep step between them wherever the noise crosses zero.
 -- Clamped that hard the steps run along EVERY zero crossing, which as a
@@ -72,7 +74,7 @@ M.DETAIL_OCTAVES = 3
 -- that cover about a fifth of the ground.
 M.BLUFF_AMP = 0.004      -- km: 8-block steps
 M.BLUFF_FREQ = 1 / 350
-M.BLUFF_OCTAVES = 2
+M.BLUFF_OCTAVES = 1
 M.BLUFF_STEEP = 20.0     -- how sharply the noise is clamped: bigger is steeper
 M.BLUFF_PATCH_FREQ = 1 / 2000
 M.BLUFF_PATCH_MIN = 0.12 -- the patch noise (+/-0.42) must exceed this
@@ -98,7 +100,7 @@ M.BOULDER_TAPER = 40.0       -- threshold rises by this per km of height: gone b
 M.SPAWN_X = 15300        -- blocks; in the temperate ring, u ~ 0.067
 M.SPAWN_Z = 0
 M.PLAIN_HALF_WIDTH_U = 0.0125   -- in u: about 1.4 km of radius either side
-M.PLAIN_FLOOR = 0.1             -- share of the relief left at the plain's centre
+M.PLAIN_FLOOR = 0.05            -- share of the relief left at the plain's centre
 
 -- Body: W(Y) is the half-width in km at Spindle height Y, piecewise linear
 -- through these knots, top to bottom. Above the first knot W is flat; the dome
@@ -195,7 +197,7 @@ end
 -- is clamp(RAMP * (n2 - MIN), 0, 1) on a much slower noise.
 local function bluffs()
     local step = clamp(mul(noise("bluff", M.BLUFF_FREQ, M.BLUFF_OCTAVES, 1.0), const(M.BLUFF_STEEP)), -1.0, 1.0)
-    local patch = clamp(mul(sub(noise("bluff_patch", M.BLUFF_PATCH_FREQ, 2, 1.0), const(M.BLUFF_PATCH_MIN)),
+    local patch = clamp(mul(sub(noise("bluff_patch", M.BLUFF_PATCH_FREQ, 1, 1.0), const(M.BLUFF_PATCH_MIN)),
         const(M.BLUFF_PATCH_RAMP)), 0.0, 1.0)
     return mul(mul(step, patch), const(M.BLUFF_AMP))
 end

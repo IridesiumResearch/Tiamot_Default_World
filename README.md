@@ -126,7 +126,9 @@ built one at a time in its own file. Built so far:
       overlapping ellipsoids rounded to the cell (`game.set_block` with a
       27-cell mask), thin branches out to the side clumps. Now and then a
       grass patch is dug into a pool: a one-block bank round a bowl of water.
-      Edits go through `edits.lua`, a paced queue, 256 a tick.
+      Edits go through `edits.lua`: one structure per batch, one batch every
+      six ticks, landing whole — a chunk touched is a relight on the server
+      and a remesh on every client, so structures arrive one at a time.
 
 ## Licence
 

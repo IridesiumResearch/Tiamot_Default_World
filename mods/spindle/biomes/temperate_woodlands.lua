@@ -29,8 +29,10 @@
 -- the branches are thin, and the trunk is walked DOWN into the ground until
 -- it meets a whole block, so on a smooth slope it never hangs.
 --
--- Every edit goes through one paced queue (`spindle.edits`), since a tree is
--- a few hundred of them and the engine's queue is shared by everything.
+-- Every structure goes through one paced queue (`spindle.edits`) as a batch
+-- that lands whole: a tree is a few hundred edits in several chunks, and
+-- each chunk touched is a relight on the server and a remesh on every
+-- client, so trees arrive one at a time with a few ticks between them.
 --
 -- The random tick offers a block only if it is one material, which on a
 -- smooth surface the top block is: grass cells and air. The block under it
@@ -39,7 +41,7 @@
 local HUMIDITY_MIN = -0.05     -- the noise runs about -0.42 .. +0.42
 local HUMIDITY_FREQ = 1 / 9000
 
-local TREE_CHANCE = 8          -- one in this many turns a grass block gets
+local TREE_CHANCE = 8          -- one grass block in this many is a candidate
 local TREE_SPACING = 4         -- no other trunk within this many blocks
 local TRUNK_MIN, TRUNK_EXTRA = 8, 4     -- trunk height 8 .. 11
 local ROOT_DEPTH = 3           -- how far down the trunk may go looking for whole ground
@@ -47,7 +49,7 @@ local CANOPY_R, CANOPY_R_EXTRA = 3.5, 1.5   -- half-width of the main clump, blo
 local CANOPY_FLAT = 0.7        -- height as a share of width
 local CLUMPS_MIN, CLUMPS_EXTRA = 2, 3       -- side clumps, each with a branch to it
 
-local POOL_CHANCE = 60000      -- one in this many turns: very occasional
+local POOL_CHANCE = 60000      -- one grass block in this many: very occasional
 local POOL_R = 3               -- radius of the bank, blocks; water is one block down
 local POOL_APART = 24          -- no other water within this many blocks
 
@@ -245,8 +247,9 @@ local function grow_tree(x, y, z, rng)
         end
     end
 
-    -- Queue it, trunk first so the tree reads as growing up, then the wood in
-    -- the canopy, then the leaves around it. Leaves never overwrite anything.
+    -- One batch, trunk first, then the wood in the canopy, then the leaves
+    -- around it. Leaves never overwrite anything.
+    edits.begin()
     for by = base, top do
         edits.push({ x = x, y = by, z = z }, "spindle:oak_log")
     end
@@ -265,7 +268,7 @@ local function grow_tree(x, y, z, rng)
             edits.push({ x = bx, y = by, z = bz }, "spindle:oak_leaves", mask)
         end
     end
-    return true
+    return edits.commit()
 end
 
 -- Pools ----------------------------------------------------------------------
@@ -298,9 +301,10 @@ local function dig_pool(x, y, z)
             end
         end
     end
-    -- The bank, then the bowl, then — two ticks later, once the carving has
-    -- landed — the water.
+    -- The bank, then the bowl, then — once the carving has landed — the
+    -- water.
     local water = {}
+    edits.begin()
     for dz = -POOL_R, POOL_R do
         for dx = -POOL_R, POOL_R do
             local d2 = dx * dx + dz * dz
@@ -317,7 +321,11 @@ local function dig_pool(x, y, z)
             end
         end
     end
-    edits.later(2, function()
+    if not edits.commit() then
+        return false
+    end
+    -- The batch lands within MAX_WAITING * BATCH_EVERY ticks; wait past that.
+    edits.later(90, function()
         for _, p in ipairs(water) do
             game.set_fluid(p, { fluid = "spindle:water", volume = 27 })
         end
@@ -325,20 +333,32 @@ local function dig_pool(x, y, z)
     return true
 end
 
+-- Which grass blocks are candidates is decided by an integer hash of the
+-- position and the world seed, before anything is read or any stream opened:
+-- a busy world hands this handler thousands of blocks a tick and almost all
+-- of them must cost nothing. Plain integer arithmetic; exact.
+local function candidate(x, y, z, one_in)
+    local h = (x * 73856093) ~ (y * 19349663) ~ (z * 83492791) ~ ((spindle.seed or 0) * 2654435761)
+    h = h ~ (h >> 17)
+    return h % one_in == 0
+end
+
 game.register_random_tick(blocks.grass, function(event)
-    if not in_ring(event.x, event.z) then
+    local x, y, z = event.x, event.y, event.z
+    if not edits.room() or not in_ring(x, z) then
+        return
+    end
+    if candidate(x, y, z, POOL_CHANCE) then
+        dig_pool(x, y, z)
+        return
+    end
+    if not candidate(x, y, z, TREE_CHANCE) then
         return
     end
     -- One stream per block, so two grass blocks in one chunk do not grow the
     -- same tree. The world seed is captured by the generator.
     local rng = game.rng_stream(
-        { x = event.x // 16, y = event.y // 16, z = event.z // 16, seed = spindle.seed or 0 },
-        "tree:" .. event.x .. ":" .. event.y .. ":" .. event.z)
-    if rng:below(POOL_CHANCE) == 0 then
-        dig_pool(event.x, event.y, event.z)
-        return
-    end
-    if rng:below(TREE_CHANCE) == 0 then
-        grow_tree(event.x, event.y, event.z, rng)
-    end
+        { x = x // 16, y = y // 16, z = z // 16, seed = spindle.seed or 0 },
+        "tree:" .. x .. ":" .. y .. ":" .. z)
+    grow_tree(x, y, z, rng)
 end)
