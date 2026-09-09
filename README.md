@@ -58,10 +58,13 @@ and names any biome that is registered but not yet built.
 
 - **Relief**: 3D fBm with a vertical gradient, masked so the Crown is a
   massif (±1.7 km) and the rings roll (±0.42 km on 12 km), plus the hills you
-  actually walk over: a 1.5 km-wavelength detail term (±150 blocks).
-- **Bluffs**: a hard-clamped noise term that makes 8-block terraces, masked
-  by a much slower noise so they show in patches over about a fifth of the
-  ground rather than along every zero crossing.
+  actually walk over: low and rolling, ±42 blocks on 800 m, two octaves so
+  the crests are soft.
+- **Gullies**: a V-groove 3½ blocks deep and ~7 wide along the zero
+  crossings of a slow noise — meandering, connected creek beds — with wet
+  gravel along the floor.
+- **Bluffs**: a hard-clamped noise term that makes terraces; off for the
+  woodland (`BLUFF_AMP = 0`), kept for rings that want them.
 - **Rocks**: not generated — grown by random tick on grass like the trees,
   as schematics: a point, a squat ellipsoid round it rounded to the cell,
   three quarters buried, in patches (one 32-block square in four).
@@ -119,7 +122,10 @@ vertically at the pole is 125 km-blocks thick in E.
 Every biome from the design is registered in `biomes/catalogue.lua`; each is
 built one at a time in its own file. Built so far:
 
-- [x] 1.1 Temperate Woodlands — grass on the temperate ring's wetter half.
+- [x] 1.1 Temperate Woodlands — turf over dark loam on the temperate ring's
+      wetter half, with irregular patches of leaf litter and wet gravel along
+      the creek beds; half-buried limestone and granite boulders and woody
+      root nodes grown in patches, and a root flare at the base of each oak.
       Oaks grow in by random tick on grass: schematics, 8–11 blocks of trunk
       planted down into the ground until it meets a whole block, a canopy of
       overlapping ellipsoids rounded to the cell (`game.set_block` with a

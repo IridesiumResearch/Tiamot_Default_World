@@ -50,6 +50,11 @@ end
 block("stone", "Stone", "The body of the world.", { hardness = 1.5, tint = ROCK })
 block("dirt", "Dirt", "Ground with no biome claim on it yet.", { hardness = 0.5, tint = SOIL })
 block("grass", "Grass", "Temperate turf.", { hardness = 0.5, tint = GREEN })
+block("loam", "Loam", "Deep, dark woodland soil.", { hardness = 0.5, tint = SOIL })
+block("leaf_litter", "Leaf litter", "Last year's leaves, packed brown.", { hardness = 0.3, tint = SOIL })
+block("creek_bed", "Creek bed", "Wet gravel along a seasonal creek.", { hardness = 0.6, tint = ROCK })
+block("limestone", "Limestone", "Weathered, pale, soft-edged.", { hardness = 1.2, tint = ROCK })
+block("granite", "Granite", "Weathered, grey, speckled.", { hardness = 2.0, tint = ROCK })
 block("oak_log", "Oak log", "Trunk of a temperate oak.", { hardness = 1.0, tint = SOIL })
 -- Transparent: a face draws only where one side of it is leaves, so a canopy
 -- is a shell rather than a stack of boxes, and light reaches the ground.

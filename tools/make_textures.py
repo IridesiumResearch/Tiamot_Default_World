@@ -33,6 +33,11 @@ BLOCKS = {
     "marrow":         (235, 228, 210,  8),
     "apex_stone":     ( 55,  30,  70,  8),
     "water":          ( 50, 110, 170,  6),
+    "loam":           ( 62,  44,  30, 10),
+    "leaf_litter":    (118,  82,  44, 16),
+    "creek_bed":      ( 96,  92,  84, 14),
+    "limestone":      (188, 178, 150, 10),
+    "granite":        (140, 132, 130, 18),
 }
 
 # Alpha per texture; everything not listed is opaque.

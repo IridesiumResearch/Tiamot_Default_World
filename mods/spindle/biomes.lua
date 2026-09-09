@@ -88,6 +88,16 @@ function spindle.built_count()
     return n
 end
 
+-- The soil under a chunk's skin: the biome's own when one built biome is
+-- the only one in reach, plain dirt otherwise. Called per surface chunk.
+function spindle.surface_soil(u_lo, u_hi)
+    local found = spindle.surface_biomes_in(u_lo, u_hi)
+    if #found == 1 and found[1].soil then
+        return found[1].soil
+    end
+    return spindle.blocks.dirt
+end
+
 -- Built surface biomes whose ring overlaps [u_lo, u_hi]. Called per chunk by
 -- the generator, so it walks a short list and allocates one table.
 function spindle.surface_biomes_in(u_lo, u_hi)

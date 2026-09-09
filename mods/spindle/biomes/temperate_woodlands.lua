@@ -4,42 +4,41 @@
 -- 1.1 Temperate Woodlands.
 --
 -- Where: the temperate ring (t = 0.18 .. 0.35 from the axis), on the wetter
--- side of the humidity noise. What: grass on the top blocks, oak trees,
--- rocks in patches, and the occasional pool.
+-- side of the humidity noise.
 --
--- Two mechanisms, because the engine offers two:
+-- The brief (2026-09-09): low rolling hills with soft crests and gentle
+-- gradient changes, broken by shallow gullies and seasonal creek beds. Deep
+-- dark loam and rich grass turf, irregular patches of brown leaf litter,
+-- exposed woody root nodes, and weathered limestone or granite boulders
+-- half-buried in the soil.
 --
---   * The ground is a native fill. The biome's mask (ring x humidity x
---     "in the top blocks under the surface") is a density program compiled
---     once; the generator runs it, sub-node smooth, for every chunk that can
---     touch this ring. It adds grass cells to the surface the dirt fill
---     shaped and changes nothing else.
+-- The hills and the gullies are the terrain field's (shape.lua). What this
+-- file owns is the FLOOR and what stands on it, by two mechanisms:
 --
---   * Everything that stands on the ground GROWS, by random tick on grass. A
---     generator cannot read the terrain it just wrote (a chunk buffer has no
---     `get`), so nothing at generation time knows where the surface is — but
---     `register_random_tick` hands a mod its blocks one at a time once the
---     world exists, which is what the engine offers for "a sapling becoming a
---     tree". A woodland fills in over the first minute you stand in it, then
---     holds its spacing.
+--   * The ground is native fills, run sub-node smooth for every chunk that
+--     can touch this ring, each adding cells to the surface the soil fill
+--     shaped: grass in the top blocks, leaf litter where a mid-scale noise
+--     says so, wet gravel along the creek floors. The soil under all of it
+--     is loam — the generator asks the biome what to paint the body as.
 --
--- Trees are SCHEMATICS, not noise: a shape the code decides, with the random
--- stream picking sizes and offsets. They are placed with `game.set_block`'s
--- third argument — a 27-cell mask — so the canopy is rounded to the cell and
--- the branches are thin, and the trunk is walked DOWN into the ground until
--- it meets a whole block, so on a smooth slope it never hangs.
---
--- Every structure goes through one paced queue (`spindle.edits`) as a batch
--- that lands whole: a tree is a few hundred edits in several chunks, and
--- each chunk touched is a relight on the server and a remesh on every
--- client, so trees arrive one at a time with a few ticks between them.
+--   * Everything that stands on the ground GROWS, by random tick on grass.
+--     A generator cannot read the terrain it just wrote, so nothing at
+--     generation time knows where the surface is — but `register_random_tick`
+--     hands a mod its blocks one at a time once the world exists. Oaks,
+--     rocks and root nodes are SCHEMATICS: shapes the code decides, rounded
+--     to the cell with `game.set_block`'s 27-cell mask, with the random
+--     stream picking sizes and offsets. Every structure is one batch on the
+--     paced queue (edits.lua), since each chunk it touches is a relight on
+--     the server and a remesh on every client.
 --
 -- The random tick offers a block only if it is one material, which on a
--- smooth surface the top block is: grass cells and air. The block under it
--- (grass over dirt) never comes up, and need not.
+-- smooth surface the top block is: grass cells and air.
 
 local HUMIDITY_MIN = -0.05     -- the noise runs about -0.42 .. +0.42
 local HUMIDITY_FREQ = 1 / 9000
+
+local LITTER_FREQ = 1 / 14     -- patches a dozen or so blocks across
+local LITTER_MIN = 0.13        -- the noise (+/-0.42) must exceed this: a fifth of the ground
 
 local TREE_CHANCE = 8          -- one grass block in this many is a candidate
 local TREE_SPACING = 4         -- no other trunk within this many blocks
@@ -49,11 +48,12 @@ local CANOPY_R, CANOPY_R_EXTRA = 3.5, 1.5   -- half-width of the main clump, blo
 local CANOPY_FLAT = 0.7        -- height as a share of width
 local CLUMPS_MIN, CLUMPS_EXTRA = 2, 3       -- side clumps, each with a branch to it
 
-local ROCK_CHANCE = 350        -- one grass block in this many, inside a rock patch
+local ROCK_CHANCE = 350        -- one grass block in this many, inside a patch
 local ROCK_PATCH = 32          -- patches are this many blocks square...
-local ROCK_PATCH_ONE_IN = 4    -- ...and one in this many has rocks
+local ROCK_PATCH_ONE_IN = 4    -- ...and one in this many has rocks and roots
 local ROCK_R_MIN, ROCK_R_EXTRA = 1.0, 1.6   -- half-width, blocks
-local ROCK_BURIED = 0.75       -- share of a rock's height under the grass
+local ROCK_BURIED = 0.6        -- share of a rock's height under the grass: half-buried
+local ROOT_SHARE = 5           -- one candidate in this many is a root node, not a rock
 
 local POOL_CHANCE = 60000      -- one grass block in this many: very occasional
 local POOL_R = 3               -- radius of the bank, blocks; water is one block down
@@ -67,18 +67,32 @@ local edits = spindle.edits
 spindle.build_biome("temperate_woodlands", function(ctx)
     local n = ctx.node
     local ring = layers.ring_by_id.temperate
-    -- Positive where the mask holds AND we are in the top blocks under the
-    -- real surface. The band goes first in the min: it is the big subtree.
-    local band = shape.terrain_band(0.0, shape.SKIN_TOP, false)
-    local spec = band
-    if not ctx.everywhere then
+    -- Where the biome is, unless it is everywhere.
+    local function masked(field)
+        if ctx.everywhere then
+            return field
+        end
         local humidity = n.noise("humidity", HUMIDITY_FREQ, 2, 1.0)
         local mask = n.min(shape.ring(ring.u[1], ring.u[2]), n.sub(humidity, n.const(HUMIDITY_MIN)))
-        spec = n.min(band, mask)
+        return n.min(field, mask)
     end
-    local field = shape.compile("biome.woodlands.grass", spec)
-    return { { field = field, material = blocks.grass } }
+    -- The top blocks under the real surface: one terrain evaluation each.
+    local function top()
+        return shape.terrain_band(0.0, shape.SKIN_TOP, false)
+    end
+    local grass = shape.compile("biome.woodlands.grass", masked(top()))
+    local litter = shape.compile("biome.woodlands.litter",
+        masked(n.min(top(), n.sub(n.noise("litter", LITTER_FREQ, 2, 1.0), n.const(LITTER_MIN)))))
+    local creek = shape.compile("biome.woodlands.creek", masked(n.min(top(), shape.gully_floor())))
+    -- In order: turf everywhere, litter over it in patches, gravel over both
+    -- along the creek floors.
+    return {
+        { field = grass, material = blocks.grass },
+        { field = litter, material = blocks.leaf_litter },
+        { field = creek, material = blocks.creek_bed },
+    }
 end)
+spindle.biomes.temperate_woodlands.soil = blocks.loam
 
 -- Reading the world ---------------------------------------------------------
 
@@ -111,6 +125,17 @@ local function in_ring(x, z)
     return r2 >= ring.u[1] * R2 and r2 < ring.u[2] * R2
 end
 
+-- Which grass blocks are candidates is decided by an integer hash of the
+-- position and the world seed, before anything is read or any stream opened:
+-- a busy world hands this handler thousands of blocks a tick and almost all
+-- of them must cost nothing. Plain integer arithmetic; exact. `seed_int` is
+-- the generator's integer form of the seed — the seed itself can be a float.
+local function candidate(x, y, z, one_in)
+    local h = (x * 73856093) ~ (y * 19349663) ~ (z * 83492791) ~ ((spindle.seed_int or 0) * 2654435761)
+    h = h ~ (h >> 17)
+    return h % one_in == 0
+end
+
 -- Cell masks -----------------------------------------------------------------
 
 -- Bit for cell (cx, cy, cz), each 0..2, indexed x + 3*y + 9*z.
@@ -124,6 +149,13 @@ local BAR = {
     y = bit(1, 0, 1) | bit(1, 1, 1) | bit(1, 2, 1),
     z = bit(1, 1, 0) | bit(1, 1, 1) | bit(1, 1, 2),
 }
+-- The bottom two layers of cells: a low hump.
+local LOW = 0
+for cz = 0, 2 do
+    for cx = 0, 2 do
+        LOW = LOW | bit(cx, 0, cz) | bit(cx, 1, cz)
+    end
+end
 
 -- The mask of the cells of block (bx, by, bz) whose centres lie inside an
 -- ellipsoid centred at (cx, cy, cz) with half-widths (rx, ry, rz). Plain
@@ -145,10 +177,29 @@ local function ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz)
     return mask
 end
 
+-- Writes an ellipsoid of `material` into the world as a batch: its cells go
+-- into empty blocks as they are, and a partly filled block it reaches keeps
+-- its own cells and becomes `material` with them, so a buried thing stands
+-- in a footprint of itself. Whole blocks are left alone — nothing shows
+-- there. Used by rocks and root nodes.
+local function push_ellipsoid(material, cx, cy, cz, rx, ry, rz)
+    for bz = math.floor(cz - rz), math.floor(cz + rz) do
+        for by = math.floor(cy - ry), math.floor(cy + ry) do
+            for bx = math.floor(cx - rx), math.floor(cx + rx) do
+                local mask = ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz)
+                if mask ~= 0 then
+                    local b = at(bx, by, bz)
+                    if b ~= nil and b.occupancy ~= FULL then
+                        edits.push({ x = bx, y = by, z = bz }, material, mask | b.occupancy)
+                    end
+                end
+            end
+        end
+    end
+end
+
 -- Trees ----------------------------------------------------------------------
 
--- Leaves go only into empty blocks, and never over a trunk; a block two
--- clumps both reach gets the union of their cells.
 local function place_leaves(leaf_masks, key, mask)
     leaf_masks[key] = (leaf_masks[key] or 0) | mask
 end
@@ -196,7 +247,7 @@ local function grow_tree(x, y, z, rng)
     local r = CANOPY_R + rng:below(16) / 16 * CANOPY_R_EXTRA
     clumps[1] = { cx = x + 0.5, cy = top - 0.5, cz = z + 0.5, rx = r, ry = r * CANOPY_FLAT, rz = r }
     local count = CLUMPS_MIN + rng:below(CLUMPS_EXTRA)
-    for i = 1, count do
+    for _ = 1, count do
         local ox = rng:below(7) - 3
         local oz = rng:below(7) - 3
         if ox == 0 and oz == 0 then ox = 2 end
@@ -209,12 +260,9 @@ local function grow_tree(x, y, z, rng)
         }
     end
     for _, c in ipairs(clumps) do
-        local x0, x1 = math.floor(c.cx - c.rx), math.floor(c.cx + c.rx)
-        local y0, y1 = math.floor(c.cy - c.ry), math.floor(c.cy + c.ry)
-        local z0, z1 = math.floor(c.cz - c.rz), math.floor(c.cz + c.rz)
-        for bz = z0, z1 do
-            for by = y0, y1 do
-                for bx = x0, x1 do
+        for bz = math.floor(c.cz - c.rz), math.floor(c.cz + c.rz) do
+            for by = math.floor(c.cy - c.ry), math.floor(c.cy + c.ry) do
+                for bx = math.floor(c.cx - c.rx), math.floor(c.cx + c.rx) do
                     local mask = ellipsoid_mask(bx, by, bz, c.cx, c.cy, c.cz, c.rx, c.ry, c.rz)
                     if mask ~= 0 then
                         place_leaves(leaf_masks, bx .. ":" .. by .. ":" .. bz, mask)
@@ -234,15 +282,10 @@ local function grow_tree(x, y, z, rng)
             local steps = math.max(math.abs(dx), math.abs(dz))
             local sx = dx > 0 and 1 or (dx < 0 and -1 or 0)
             local sz = dz > 0 and 1 or (dz < 0 and -1 or 0)
+            local along_x = math.abs(dx) >= math.abs(dz)
             for step = 1, steps do
-                local along_x = math.abs(dx) >= math.abs(dz)
-                if along_x then
-                    if step <= math.abs(dx) then bx = bx + sx end
-                    if step <= math.abs(dz) then bz = bz + sz end
-                else
-                    if step <= math.abs(dz) then bz = bz + sz end
-                    if step <= math.abs(dx) then bx = bx + sx end
-                end
+                if step <= math.abs(dx) then bx = bx + sx end
+                if step <= math.abs(dz) then bz = bz + sz end
                 if step == steps then by = by + 1 end
                 local key = bx .. ":" .. by .. ":" .. bz
                 branch_masks[key] = (branch_masks[key] or 0) | (along_x and BAR.x or BAR.z)
@@ -253,11 +296,31 @@ local function grow_tree(x, y, z, rng)
         end
     end
 
-    -- One batch, trunk first, then the wood in the canopy, then the leaves
-    -- around it. Leaves never overwrite anything.
+    -- One batch: the trunk, a root flare of low humps of wood round its
+    -- foot, the wood in the canopy, then the leaves. Leaves never overwrite
+    -- anything.
+    if not edits.room() then
+        return false
+    end
     edits.begin()
     for by = base, top do
         edits.push({ x = x, y = by, z = z }, "spindle:oak_log")
+    end
+    local flares = 2 + rng:below(3)
+    local dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+    local first = rng:below(4)
+    for i = 0, flares - 1 do
+        local d = dirs[(first + i) % 4 + 1]
+        local fx, fz = x + d[1], z + d[2]
+        -- The flare sits on whatever the ground is beside the trunk: the
+        -- first block above a whole one, up to the grass line.
+        for fy = y, base, -1 do
+            local b = at(fx, fy, fz)
+            if b ~= nil and b.occupancy ~= FULL then
+                edits.push({ x = fx, y = fy, z = fz }, "spindle:oak_log", LOW | b.occupancy)
+                break
+            end
+        end
     end
     for key, mask in pairs(branch_masks) do
         local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
@@ -277,6 +340,35 @@ local function grow_tree(x, y, z, rng)
     return edits.commit()
 end
 
+-- Rocks and root nodes ------------------------------------------------------
+
+-- A rock is a point and a squat ellipsoid round it, rounded to the cell and
+-- more than half buried: weathered limestone or granite. A root node is the
+-- same shape, smaller and flatter, in wood — the exposed knuckle of a root.
+-- Both come in patches: a coarse grid of the world, one square in a few, is
+-- where they may grow at all.
+local function place_rock(x, y, z, rng, root)
+    if not edits.room() then
+        return false
+    end
+    local r = ROCK_R_MIN + rng:below(9) / 8 * ROCK_R_EXTRA
+    local material = rng:next_bool() and "spindle:limestone" or "spindle:granite"
+    local ry = r * (0.5 + rng:below(5) / 10)
+    if root then
+        r = 0.7 + rng:below(7) / 10
+        ry = r * 0.5
+        material = "spindle:oak_log"
+    end
+    local rx = r * (0.8 + rng:below(5) / 10)
+    local rz = r * (0.8 + rng:below(5) / 10)
+    local ground = y + 0.6                       -- about where a partial top block's surface is
+    local cy = ground + ry * (1.0 - 2.0 * ROCK_BURIED)
+    local cx, cz = x + 0.5 + (rng:below(5) - 2) / 4, z + 0.5 + (rng:below(5) - 2) / 4
+    edits.begin()
+    push_ellipsoid(material, cx, cy, cz, rx, ry, rz)
+    return edits.commit()
+end
+
 -- Pools ----------------------------------------------------------------------
 
 -- A pool is dug, not found: a flat patch of grass gets a bank one block deep
@@ -284,8 +376,6 @@ end
 -- what keeps it in — the water sits a block below the grass, walled by whole
 -- blocks of ground — so a smooth slope cannot drain it.
 local function dig_pool(x, y, z)
-    -- Flat: every block on the bank ring is ground at y with air over it,
-    -- and whole ground under it.
     for dz = -POOL_R, POOL_R do
         for dx = -POOL_R, POOL_R do
             if dx * dx + dz * dz <= POOL_R * POOL_R then
@@ -296,7 +386,6 @@ local function dig_pool(x, y, z)
             end
         end
     end
-    -- Alone: no water nearby already.
     for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }) do
         for _, r in ipairs({ 6, 12, POOL_APART }) do
             for dy = -2, 1 do
@@ -307,8 +396,6 @@ local function dig_pool(x, y, z)
             end
         end
     end
-    -- The bank, then the bowl, then — once the carving has landed — the
-    -- water.
     local water = {}
     edits.begin()
     for dz = -POOL_R, POOL_R do
@@ -339,53 +426,7 @@ local function dig_pool(x, y, z)
     return true
 end
 
--- Which grass blocks are candidates is decided by an integer hash of the
--- position and the world seed, before anything is read or any stream opened:
--- a busy world hands this handler thousands of blocks a tick and almost all
--- of them must cost nothing. Plain integer arithmetic; exact. `seed_int` is
--- the generator's integer form of the seed — the seed itself can be a float.
-local function candidate(x, y, z, one_in)
-    local h = (x * 73856093) ~ (y * 19349663) ~ (z * 83492791) ~ ((spindle.seed_int or 0) * 2654435761)
-    h = h ~ (h >> 17)
-    return h % one_in == 0
-end
-
--- Rocks ----------------------------------------------------------------------
-
--- A rock is a point and a squat ellipsoid round it, rounded to the cell and
--- three quarters buried. The part above the grass goes into empty blocks as
--- stone cells; the surface block it sits in keeps its own cells and becomes
--- stone with them, so the rock stands in a small footprint of bare rock;
--- whole blocks underneath are left alone, since nothing of the rock shows
--- there. Rocks come in patches: a coarse grid of the world, one square in a
--- few, is where they may grow at all.
-local function place_rock(x, y, z, rng)
-    local r = ROCK_R_MIN + rng:below(9) / 8 * ROCK_R_EXTRA
-    local rx = r * (0.8 + rng:below(5) / 10)
-    local rz = r * (0.8 + rng:below(5) / 10)
-    local ry = r * (0.5 + rng:below(5) / 10)
-    local ground = y + 0.6                       -- about where a partial top block's surface is
-    local cy = ground + ry * (1.0 - 2.0 * ROCK_BURIED)
-    local cx, cz = x + 0.5 + (rng:below(5) - 2) / 4, z + 0.5 + (rng:below(5) - 2) / 4
-    if not edits.room() then
-        return false
-    end
-    edits.begin()
-    for bz = math.floor(cz - rz), math.floor(cz + rz) do
-        for by = math.floor(cy - ry), math.floor(cy + ry) do
-            for bx = math.floor(cx - rx), math.floor(cx + rx) do
-                local mask = ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz)
-                if mask ~= 0 then
-                    local b = at(bx, by, bz)
-                    if b ~= nil and b.occupancy ~= FULL then
-                        edits.push({ x = bx, y = by, z = bz }, "spindle:stone", mask | b.occupancy)
-                    end
-                end
-            end
-        end
-    end
-    return edits.commit()
-end
+-- The random tick -------------------------------------------------------------
 
 game.register_random_tick(blocks.grass, function(event)
     local x, y, z = event.x, event.y, event.z
@@ -407,10 +448,10 @@ game.register_random_tick(blocks.grass, function(event)
         { x = x // 16, y = y // 16, z = z // 16, seed = spindle.seed or 0 },
         "grow:" .. x .. ":" .. y .. ":" .. z)
     if rock then
-        place_rock(x, y, z, rng)
+        place_rock(x, y, z, rng, candidate(x, y, z, ROOT_SHARE))
     else
         grow_tree(x, y, z, rng)
     end
 end)
 
-game.log("spindle: woodlands grow trees, rocks and pools by random tick")
+game.log("spindle: woodlands grow trees, rocks, root nodes and pools by random tick")

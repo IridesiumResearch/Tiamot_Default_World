@@ -58,21 +58,29 @@ M.RELIEF_OCTAVES = 3     -- 12, 6 and 3 km; the detail term carries on from 1.5
 M.RELIEF_FLOOR = 0.25    -- share of relief left outside the Crown
 M.RELIEF_RAMP = 27.0     -- mask = clamp(1 - RAMP * (u - CROWN_U), FLOOR, 1)
 M.CROWN_U = 0.0064
--- Detail: the hills you walk over. +/-150 blocks on a 1.5 km wavelength is a
--- 40% grade at the steepest, well under the overhang limit (relief < 0.42 *
--- wavelength, plan A.3).
-M.DETAIL_AMP = 0.36      -- km, x0.42 = +/-150 blocks
-M.DETAIL_FREQ = 1 / 1500
-M.DETAIL_OCTAVES = 3     -- 1.5 km, 750 and 375 m. Noise cost is per octave:
-                         -- the terrain is evaluated two or three times per
-                         -- surface chunk, so every octave here is paid thrice.
+-- Detail: the hills you walk over. Low and rolling, with soft crests: +/-42
+-- blocks on an 800 m wavelength is a 17% grade at the steepest, and two
+-- octaves rather than three is what keeps the crests soft. (The woodland
+-- brief, 2026-09-09. Other rings will want their own terms, masked.)
+M.DETAIL_AMP = 0.10      -- km, x0.42 = +/-42 blocks
+M.DETAIL_FREQ = 1 / 800
+M.DETAIL_OCTAVES = 2     -- 800 and 400 m. Noise cost is per octave, and the
+                         -- terrain is evaluated once per skin fill.
+-- Gullies: a V-shaped groove cut along the zero crossings of a slow noise.
+-- Those crossings are meandering, connected lines, which is what a creek
+-- bed looks like from above. Depth GULLY_DEPTH at the line, sloping up to
+-- nothing where |noise| reaches GULLY_WIDTH — about seven blocks across.
+M.GULLY_DEPTH = 0.0035   -- km: three and a half blocks
+M.GULLY_WIDTH = 0.03     -- in the noise's own units (it runs +/-0.42)
+M.GULLY_FREQ = 1 / 320
+M.GULLY_OCTAVES = 2
 -- Bluffs: a low-frequency noise clamped hard makes plateaus at +/-BLUFF_AMP
 -- with a short, steep step between them wherever the noise crosses zero.
 -- Clamped that hard the steps run along EVERY zero crossing, which as a
 -- constant was a wall every two hundred blocks in a random direction — so
 -- the term is masked by a second, slower noise, and shows only in patches
 -- that cover about a fifth of the ground.
-M.BLUFF_AMP = 0.004      -- km: 8-block steps
+M.BLUFF_AMP = 0.0        -- km; off for the woodland brief (0.004 is 8-block steps)
 M.BLUFF_FREQ = 1 / 350
 M.BLUFF_OCTAVES = 1
 M.BLUFF_STEEP = 20.0     -- how sharply the noise is clamped: bigger is steeper
@@ -154,10 +162,11 @@ local function sub(a, b) return { op = "sub", a = a, b = b } end
 local function mul(a, b) return { op = "mul", a = a, b = b } end
 local function min(a, b) return { op = "min", a = a, b = b } end
 local function clamp(a, lo, hi) return { op = "clamp", a = a, low = lo, high = hi } end
+local function abs(a) return { op = "abs", a = a } end
 local function noise(stream, frequency, octaves, amplitude)
     return { op = "noise", stream = stream, frequency = frequency, octaves = octaves, amplitude = amplitude }
 end
-M.node = { const = const, X = X, Y = Y, Z = Z, add = add, sub = sub, mul = mul, min = min, clamp = clamp, noise = noise }
+M.node = { const = const, X = X, Y = Y, Z = Z, add = add, sub = sub, mul = mul, min = min, clamp = clamp, abs = abs, noise = noise }
 
 -- Shared subexpressions (each call builds a fresh tree) ----------------------
 -- r^2 in km^2: seven ops and three buffers.
@@ -202,11 +211,24 @@ local function plain_mask()
     return add(const(M.PLAIN_FLOOR), mul(ramp, const(1.0 - M.PLAIN_FLOOR)))
 end
 
--- T: km below the real surface, positive underground. D plus the relief
--- and the detail (and the bluffs, when they are on) — a noise node each,
--- every time it is evaluated. `flank` programs run only near the rim and the
--- underside, far from the plain, so they leave it out and keep the ops for
--- the body.
+-- How deep in a gully a point is, 0..1: 1 on the creek line, 0 at the
+-- gully's edge. The same noise node in two programs is the same field.
+local function gully_depth()
+    local groove = abs(noise("gully", M.GULLY_FREQ, M.GULLY_OCTAVES, 1.0))
+    return clamp(sub(const(1.0), mul(groove, const(1.0 / M.GULLY_WIDTH))), 0.0, 1.0)
+end
+-- Positive on the floor of a gully — the inner two fifths of its width —
+-- for the creek-bed material. Multiplied by the plain mask's complement is
+-- not needed: gullies run through the plain too.
+function M.gully_floor()
+    return sub(gully_depth(), const(0.6))
+end
+
+-- T: km below the real surface, positive underground. D plus the relief,
+-- the detail and the gullies (and the bluffs, when they are on) — a noise
+-- node each, every time it is evaluated. `flank` programs run only near the
+-- rim and the underside, far from the plain, so they leave it out and keep
+-- the ops for the body.
 function M.terrain(flank)
     local relief = mul(relief_mask(), noise("relief", M.RELIEF_FREQ, M.RELIEF_OCTAVES, M.RELIEF_AMP))
     local detail = noise("detail", M.DETAIL_FREQ, M.DETAIL_OCTAVES, M.DETAIL_AMP)
@@ -217,14 +239,17 @@ function M.terrain(flank)
     if not flank then
         shape = mul(shape, plain_mask())
     end
+    -- A gully lowers the surface, which is LESS depth at a given height.
+    shape = sub(shape, mul(gully_depth(), const(M.GULLY_DEPTH)))
     return add(M.depth(), shape)
 end
 
--- A band of T between two depths: min(T - lo, -(T - hi)). The negation is a
--- multiply rather than `sub(hi, T)` so T is never evaluated with a constant
--- already waiting on the stack. Negative depths are ABOVE the ground.
+-- A band of T between two depths, at ONE evaluation of the terrain:
+-- half - |T - mid| is positive exactly where lo < T < hi. Negative depths
+-- are ABOVE the ground.
 function M.terrain_band(lo, hi, flank)
-    return min(sub(M.terrain(flank), const(lo)), mul(sub(M.terrain(flank), const(hi)), const(-1.0)))
+    local mid, half = (lo + hi) / 2, (hi - lo) / 2
+    return sub(const(half), abs(sub(M.terrain(flank), const(mid))))
 end
 
 -- W(Y) as a sum of clamped ramps on RAW y, so each segment is seven ops.

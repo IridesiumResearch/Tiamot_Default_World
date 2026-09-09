@@ -108,7 +108,7 @@ game.register_on_generate(function(buf, pos)
     -- T, the real depth: D plus whatever the relief, detail and bluffs can add.
     local plain = math.max(shape.plain_at(ulo), shape.plain_at(uhi))
     local relief = plain * (NOISE_BOUND * (shape.RELIEF_AMP * shape.mask_at(ulo) + shape.DETAIL_AMP)
-        + shape.BLUFF_AMP) + SAFETY
+        + shape.BLUFF_AMP) + shape.GULLY_DEPTH + SAFETY
     local tmax = dmax + relief
     local tmin = dmin - relief
 
@@ -143,12 +143,12 @@ game.register_on_generate(function(buf, pos)
     elseif Yhi < shape.TAIL_Y then
         base, tail = blocks.marrow, true
     end
-    -- Within reach of the skin, the body is painted as dirt first and stone
-    -- is put back from five blocks down: that keeps the surface's shape in
-    -- one smooth fill.
+    -- Within reach of the skin, the body is painted as the biome's soil
+    -- first and stone is put back from five blocks down: that keeps the
+    -- surface's shape in one smooth fill.
     local skin = not tail and tmin < shape.SKIN_DIRT
     if skin then
-        base = blocks.dirt
+        base = spindle.surface_soil(ulo, uhi)
     end
 
     if inside_body and tmin > 0 then

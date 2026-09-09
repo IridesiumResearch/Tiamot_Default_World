@@ -20,8 +20,9 @@ K = 5.0
 STACK_Y = 2.0
 SUMMIT, DOME_DROP = 19.0, 2.5
 RELIEF_AMP, RELIEF_FLOOR, RELIEF_RAMP, CROWN_U = 4.0, 0.25, 27.0, 0.0064
-DETAIL_AMP = 0.36
-BLUFF_AMP = 0.004
+DETAIL_AMP = 0.10
+BLUFF_AMP = 0.0
+GULLY_DEPTH = 0.0035
 SPAWN_X, SPAWN_Z = 15300, 0
 PLAIN_HALF_WIDTH_U, PLAIN_FLOOR = 0.0125, 0.05
 KNOTS = [(16.5, 59.0), (3.1, 58.5), (-8.0, 46.0), (-12.0, 30.0), (-16.0, 16.0),
@@ -82,7 +83,7 @@ def classify(cx, cy, cz):
     Ylo, Yhi = (y0 - Y0) * SCALE, (y1 - Y0) * SCALE
     dmax = dome_at(ulo) - Ylo; dmin = dome_at(uhi) - Yhi
     plain = max(plain_at(ulo), plain_at(uhi))
-    relief = plain * (NOISE_BOUND * (RELIEF_AMP * mask_at(ulo) + DETAIL_AMP) + BLUFF_AMP) + SAFETY
+    relief = plain * (NOISE_BOUND * (RELIEF_AMP * mask_at(ulo) + DETAIL_AMP) + BLUFF_AMP) + GULLY_DEPTH + SAFETY
     tmax, tmin = dmax + relief, dmin - relief
     w_hi = half_width_at(Yhi) * WARP_HI + SAFETY
     w_lo = half_width_at(Ylo) * WARP_LO - SAFETY
