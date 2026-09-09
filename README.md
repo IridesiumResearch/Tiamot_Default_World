@@ -117,6 +117,12 @@ E is ellipsoidal distance with a squish of 5 (the plan said 3.7; 5 keeps the
 magma under the abyss even at the Crown), so a shell that is 25 blocks thick
 vertically at the pole is 125 km-blocks thick in E.
 
+## Blocks
+
+`docs/blocks.md` is the node list: every block, which part of the world
+introduced it, and why. From 2026-09-09 a surface biome adds at most one
+new material, and additions are flagged before they land.
+
 ## Biomes
 
 Every biome from the design is registered in `biomes/catalogue.lua`; each is

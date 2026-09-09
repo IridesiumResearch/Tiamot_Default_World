@@ -4,6 +4,28 @@ What the world mod has needed from the engine, found by building it. Each
 entry says what was seen, why the mod cannot fix it, and the smallest
 engine change that would. Newest first. Items are removed when they land.
 
+## 0. A merge write: cells into a block that keeps its others (2026-09-09)
+
+**Seen.** Surfaces are sub-node smooth, so the block a rock, a root or a
+tree's root flare sits in is the block the grass cells are in. A mod can
+write one material per block (`set_block` with a mask replaces the block),
+so anything placed ON a smooth surface either hangs a cell above it or
+turns the whole block into itself — a rock stands in a full-block footprint
+of stone, a root flare makes a wood-topped block. The designer's rule is
+that anything embedded in the ground embeds at sub-node resolution.
+
+**Why the mod cannot fix it.** Two materials in one block is a mixed block,
+and there is no runtime write that produces one. The engine already does
+this per cell for plan stamps (`Edit::SubNode`, one per filled cell, when a
+stamp layers onto a block it has replaced), so the mechanism exists; it is
+not reachable from Lua.
+
+**Ask.** `game.set_block(position, block, occupancy, { merge = true })` —
+or a fourth positional — that writes `block` into the masked cells and
+leaves every other cell as it was: one `Edit::SubNode` per masked cell, or
+one mixed-block edit if the protocol grows one. With it a rock's cells go
+into the grass block around them and nothing else changes.
+
 ## 1. Chunk serving is not paced against the tick (2026-09-09)
 
 **Seen.** With `view_distance = 24` on a world of sub-node surfaces, every

@@ -55,24 +55,25 @@ M.DOME_DROP = 2.5        -- km from summit to rim (rim at +16.5)
 M.RELIEF_AMP = 4.0       -- km, before the mask
 M.RELIEF_FREQ = 1 / 12000
 M.RELIEF_OCTAVES = 3     -- 12, 6 and 3 km; the detail term carries on from 1.5
-M.RELIEF_FLOOR = 0.25    -- share of relief left outside the Crown
+M.RELIEF_FLOOR = 0.15    -- share of relief left outside the Crown (60% of 0.25, 2026-09-09)
 M.RELIEF_RAMP = 27.0     -- mask = clamp(1 - RAMP * (u - CROWN_U), FLOOR, 1)
 M.CROWN_U = 0.0064
--- Detail: the hills you walk over. Low and rolling, with soft crests: +/-42
--- blocks on an 800 m wavelength is a 17% grade at the steepest, and two
+-- Detail: the hills you walk over. Low and rolling, with soft crests: +/-25
+-- blocks on a 480 m wavelength is a 17% grade at the steepest, and two
 -- octaves rather than three is what keeps the crests soft. (The woodland
--- brief, 2026-09-09. Other rings will want their own terms, masked.)
-M.DETAIL_AMP = 0.10      -- km, x0.42 = +/-42 blocks
-M.DETAIL_FREQ = 1 / 800
-M.DETAIL_OCTAVES = 2     -- 800 and 400 m. Noise cost is per octave, and the
+-- brief, 2026-09-09, then "60% of that" the same day — both the height and
+-- the width. Other rings will want their own terms, masked.)
+M.DETAIL_AMP = 0.06      -- km, x0.42 = +/-25 blocks
+M.DETAIL_FREQ = 1 / 480
+M.DETAIL_OCTAVES = 2     -- 480 and 240 m. Noise cost is per octave, and the
                          -- terrain is evaluated once per skin fill.
 -- Gullies: a V-shaped groove cut along the zero crossings of a slow noise.
 -- Those crossings are meandering, connected lines, which is what a creek
 -- bed looks like from above. Depth GULLY_DEPTH at the line, sloping up to
 -- nothing where |noise| reaches GULLY_WIDTH — about seven blocks across.
-M.GULLY_DEPTH = 0.0035   -- km: three and a half blocks
-M.GULLY_WIDTH = 0.03     -- in the noise's own units (it runs +/-0.42)
-M.GULLY_FREQ = 1 / 320
+M.GULLY_DEPTH = 0.005    -- km: five blocks
+M.GULLY_WIDTH = 0.04     -- in the noise's own units (it runs +/-0.42): ~9 blocks across
+M.GULLY_FREQ = 1 / 260
 M.GULLY_OCTAVES = 2
 -- Bluffs: a low-frequency noise clamped hard makes plateaus at +/-BLUFF_AMP
 -- with a short, steep step between them wherever the noise crosses zero.
@@ -136,8 +137,14 @@ M.HOLLOW_R = 37.0
 -- lets the generator place them exactly. Under a mountain the gloam begins
 -- deeper than 1.6 km below the peak, under a valley shallower — the proxy
 -- error the plan accepts until there is an exact depth (B.5).
-M.SKIN_TOP = 0.0015      -- km: the biome's own block, one to two blocks
-M.SKIN_DIRT = 0.005      -- km: dirt under it, stone below that
+-- **The turf is three blocks thick for a reason that is not the look.** A
+-- band is `half - |T - mid|`, which has a kink at `mid`; a block whose eight
+-- corner samples straddle the kink interpolates its cells low, so the
+-- band's upper edge lands a hair below the soil's and shows as a thin band
+-- of soil on any slope. With `mid` at 1.5 blocks the kink is more than a
+-- block from every surface block, and the two edges coincide exactly.
+M.SKIN_TOP = 0.003       -- km: the biome's own material, three blocks
+M.SKIN_DIRT = 0.005      -- km: soil under it, stone below that
 M.GLOAM_D = 1.6          -- km below the base dome
 M.ABYSS_D = 4.0
 
