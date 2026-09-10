@@ -142,26 +142,19 @@ Every biome from the design is registered in `biomes/catalogue.lua`; each is
 built one at a time in its own file. Built so far:
 
 - [x] 1.1 Temperate Woodlands — turf over dark loam on the temperate ring's
-      wetter half, with irregular patches of leaf litter and wet gravel along
-      the creek beds; half-buried limestone and granite boulders and woody
-      root nodes grown in patches, and a root flare at the base of each oak.
-      Oaks and aspens (one in seven) in the Better Trees idiom: trunks
-      rounded by dropping corner columns at random, a fork in one oak in
-      four, two to four branches that rise as they reach out and each end in
-      a ragged clump of leaves, a crown on top — lumps and gaps, not a blob.
-      Dead wood rarer still (one in fourteen): standing snags with a broken
-      top, or fallen trunks sunk into the turf. Everything placed at runtime
-      uses the engine's merge write, so a rock, a root or a trunk foot names
-      its own cells and the turf keeps the rest. The grass tick logs its
-      counts every ten seconds and on `stats` in chat.
-      Oaks grow in by random tick on grass: schematics, 8–11 blocks of trunk
-      planted down into the ground until it meets a whole block, a canopy of
-      overlapping ellipsoids rounded to the cell (`game.set_block` with a
-      27-cell mask), thin branches out to the side clumps. Now and then a
-      grass patch is dug into a pool: a one-block bank round a bowl of water.
-      Edits go through `edits.lua`: one structure per batch, one batch every
-      six ticks, landing whole — a chunk touched is a relight on the server
-      and a remesh on every client, so structures arrive one at a time.
+      wetter half, patches of leaf litter, wet gravel along the creek beds;
+      fern carpets two cells tall in clumps and tufts of grass one cell tall
+      over all of it (fills, so they are there the moment a chunk is).
+      Grown by random tick on grass, each structure one merged batch: oaks
+      and aspens in the Better Trees idiom (rounded trunks, a fork in one
+      oak in four, branches that each carry a ragged clump of leaves, a
+      crown on top), dead wood one tree in fourteen (snags with a broken
+      top, fallen trunks sunk into the turf), rock clusters of weathered
+      limestone or granite from the shared `rocks.lua`, woody root nodes,
+      bramble tangles in patches, a hollow dug under the roots of one oak in
+      three with the root arching over it, and tiny vernal pools, grass-sided
+      and soil-floored. The grass tick logs its counts every ten seconds and
+      on `stats` in chat.
 
 ## Licence
 
