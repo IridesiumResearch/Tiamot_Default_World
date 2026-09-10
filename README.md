@@ -58,7 +58,7 @@ and names any biome that is registered but not yet built.
 
 - **Relief**: 3D fBm with a vertical gradient, masked so the Crown is a
   massif (±1.7 km) and the rings roll gently (±150 m on 12 km), plus the
-  hills you actually walk over: low and rolling, ±15 blocks on 290 m, two
+  hills you actually walk over: low and rolling, ±8 blocks on 150 m, two
   octaves so the crests are soft.
 - **Gullies**: a groove 2½ blocks deep and ~9 wide along the zero crossings
   of a slow noise — meandering, connected creek beds — with a fine noise
@@ -69,9 +69,10 @@ and names any biome that is registered but not yet built.
 - **Rocks**: not generated — grown by random tick on grass like the trees,
   as schematics: a point, a squat ellipsoid round it rounded to the cell,
   three quarters buried, in patches (one 32-block square in four).
-- **The plain**: a ~3 km-wide ring at the spawn radius where the relief is
-  scaled to a tenth, so the ground is within ~100 blocks of the base dome and
-  a first visit lands in one look with no hopping through unloaded chunks.
+- **The plain**: a ~3 km-wide ring at the spawn radius where the 12 km
+  relief is scaled to a twentieth — the hills, steps and gullies run through
+  it at full strength — so the ground is within ~20 blocks of the base dome
+  and a first visit lands in one look.
 - **Dev switch**: `spindle.config.everywhere` in `init.lua` names a built
   biome and puts it over the whole surface, ignoring its ring and humidity,
   so one biome can be looked at on its own. Currently `temperate_woodlands`;
@@ -133,6 +134,9 @@ built one at a time in its own file. Built so far:
       wetter half, with irregular patches of leaf litter and wet gravel along
       the creek beds; half-buried limestone and granite boulders and woody
       root nodes grown in patches, and a root flare at the base of each oak.
+      Birches here and there (one tree in seven), dead wood rarer still (one
+      in fourteen): standing snags with a broken top, or fallen trunks sunk
+      into the turf. The grass tick logs its counts every thirty seconds.
       Oaks grow in by random tick on grass: schematics, 8–11 blocks of trunk
       planted down into the ground until it meets a whole block, a canopy of
       overlapping ellipsoids rounded to the cell (`game.set_block` with a

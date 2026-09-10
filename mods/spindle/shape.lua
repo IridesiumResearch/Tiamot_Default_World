@@ -63,9 +63,9 @@ M.CROWN_U = 0.0064
 -- octaves rather than three is what keeps the crests soft. (The woodland
 -- brief, 2026-09-09, then "60% of that" twice the same day — both the
 -- height and the width. Other rings will want their own terms, masked.)
-M.DETAIL_AMP = 0.036     -- km, x0.42 = +/-15 blocks
-M.DETAIL_FREQ = 1 / 290
-M.DETAIL_OCTAVES = 2     -- 290 and 145 m. Noise cost is per octave, and the
+M.DETAIL_AMP = 0.02      -- km, x0.42 = +/-8 blocks
+M.DETAIL_FREQ = 1 / 150
+M.DETAIL_OCTAVES = 2     -- 150 and 75 m. Noise cost is per octave, and the
                          -- terrain is evaluated once per skin fill.
 -- Gullies: a V-shaped groove cut along the zero crossings of a slow noise.
 -- Those crossings are meandering, connected lines, which is what a creek
@@ -100,12 +100,11 @@ M.BLUFF_PATCH_RAMP = 15.0 -- how quickly a patch fades in past that
 -- The plain. Nothing in Lua can evaluate the relief, so the one place a
 -- player has to be put down blind is where the relief is SMALL by
 -- construction: a ring of the disc, centred on the spawn radius and about
--- three kilometres wide, where the relief and the detail are scaled down to
--- PLAIN_FLOOR of themselves. The ground there is within about a hundred
--- blocks of the base dome, which a first visit can see from where it is
--- dropped, so it lands in one look and never hops. The plan's Greensward.
--- (A flat clearing was tried first: cut into +/-1 km of relief it is a
--- crater with a wall round it.)
+-- three kilometres wide, where the RING relief — the 12 km term, the one
+-- that puts the surface hundreds of blocks from the base dome — is scaled
+-- down to PLAIN_FLOOR of itself. The hills, the steps and the gullies run
+-- through it at full strength: they are a few blocks, and a first visit can
+-- see that far down. (Damping them too made the spawn read as plains.)
 M.SPAWN_X = 15300        -- blocks; in the temperate ring, u ~ 0.067
 M.SPAWN_Z = 0
 M.PLAIN_HALF_WIDTH_U = 0.0125   -- in u: about 1.4 km of radius either side
@@ -255,12 +254,12 @@ end
 function M.terrain(flank)
     local relief = mul(relief_mask(), noise("relief", M.RELIEF_FREQ, M.RELIEF_OCTAVES, M.RELIEF_AMP))
     local detail = noise("detail", M.DETAIL_FREQ, M.DETAIL_OCTAVES, M.DETAIL_AMP)
+    if not flank then
+        relief = mul(relief, plain_mask())
+    end
     local shape = add(relief, detail)
     if M.BLUFF_AMP > 0 then
         shape = add(shape, bluffs())
-    end
-    if not flank then
-        shape = mul(shape, plain_mask())
     end
     -- A gully lowers the surface, which is LESS depth at a given height.
     shape = sub(shape, mul(gully_depth(), const(M.GULLY_DEPTH)))

@@ -10,7 +10,8 @@
 -- gradient changes, broken by shallow gullies and seasonal creek beds. Deep
 -- dark loam and rich grass turf, irregular patches of brown leaf litter,
 -- exposed woody root nodes, and weathered limestone or granite boulders
--- half-buried in the soil.
+-- half-buried in the soil. Oaks, with birches here and there, and dead
+-- wood — standing snags and fallen trunks — rarer still.
 --
 -- The hills and the gullies are the terrain field's (shape.lua). What this
 -- file owns is the FLOOR and what stands on it, by two mechanisms:
@@ -24,7 +25,7 @@
 --   * Everything that stands on the ground GROWS, by random tick on grass.
 --     A generator cannot read the terrain it just wrote, so nothing at
 --     generation time knows where the surface is — but `register_random_tick`
---     hands a mod its blocks one at a time once the world exists. Oaks,
+--     hands a mod its blocks one at a time once the world exists. Trees,
 --     rocks and root nodes are SCHEMATICS: shapes the code decides, rounded
 --     to the cell with `game.set_block`'s 27-cell mask, with the random
 --     stream picking sizes and offsets. Every structure is one batch on the
@@ -33,6 +34,11 @@
 --
 -- The random tick offers a block only if it is one material, which on a
 -- smooth surface the top block is: grass cells and air.
+--
+-- **Counted, and never silent.** The handler runs under pcall and logs an
+-- error rather than letting the engine disable the mod without a word, and
+-- every STATS_EVERY ticks it logs how many turns became what. If nothing
+-- grows, that block of the log says why.
 
 local HUMIDITY_MIN = -0.05     -- the noise runs about -0.42 .. +0.42
 local HUMIDITY_FREQ = 1 / 9000
@@ -42,11 +48,22 @@ local LITTER_MIN = 0.13        -- the noise (+/-0.42) must exceed this: a fifth 
 
 local TREE_CHANCE = 8          -- one grass block in this many is a candidate
 local TREE_SPACING = 4         -- no other trunk within this many blocks
-local TRUNK_MIN, TRUNK_EXTRA = 8, 4     -- trunk height 8 .. 11
-local ROOT_DEPTH = 3           -- how far down the trunk may go looking for whole ground
-local CANOPY_R, CANOPY_R_EXTRA = 3.5, 1.5   -- half-width of the main clump, blocks
-local CANOPY_FLAT = 0.7        -- height as a share of width
-local CLUMPS_MIN, CLUMPS_EXTRA = 2, 3       -- side clumps, each with a branch to it
+local BIRCH_ONE_IN = 7         -- of the trees, one in this many is a birch
+local DEAD_ONE_IN = 14         -- of the trees, one in this many is dead wood (half standing, half fallen)
+local ROOT_DEPTH = 3           -- how far down a trunk may go looking for whole ground
+
+-- Species. Trunk heights, the main clump's half-width, how many side clumps
+-- and how far below the top they sit, and what they are made of.
+local OAK = {
+    log = "spindle:oak_log", leaves = "spindle:oak_leaves",
+    trunk = { 8, 4 }, canopy = { 3.5, 1.5 }, flat = 0.7, clumps = { 2, 3 }, clump_r = { 1.8, 1.0 },
+    clump_drop = { 1, 3 }, clump_out = 3, flares = { 2, 3 },
+}
+local BIRCH = {
+    log = "spindle:birch_log", leaves = "spindle:oak_leaves",
+    trunk = { 11, 5 }, canopy = { 2.0, 0.9 }, flat = 1.1, clumps = { 1, 2 }, clump_r = { 1.3, 0.7 },
+    clump_drop = { 0, 2 }, clump_out = 2, flares = { 0, 2 },
+}
 
 local ROCK_CHANCE = 350        -- one grass block in this many, inside a patch
 local ROCK_PATCH = 32          -- patches are this many blocks square...
@@ -58,6 +75,8 @@ local ROOT_SHARE = 5           -- one candidate in this many is a root node, not
 local POOL_CHANCE = 60000      -- one grass block in this many: very occasional
 local POOL_R = 3               -- radius of the bank, blocks; water is one block down
 local POOL_APART = 24          -- no other water within this many blocks
+
+local STATS_EVERY = 600        -- ticks between log lines: thirty seconds
 
 local blocks = spindle.blocks
 local layers = spindle.layers
@@ -109,8 +128,9 @@ end
 local function is_whole(b)
     return b ~= nil and b.occupancy == FULL
 end
-local function holds(b, material)
-    return b ~= nil and b.material == material and b.occupancy ~= 0
+local function is_wood(b)
+    return b ~= nil and b.occupancy ~= 0
+        and (b.material == blocks.oak_log or b.material == blocks.birch_log or b.material == blocks.dead_wood)
 end
 
 -- Whether a grass block at (x, z) is in this biome's ring. Integer
@@ -130,11 +150,18 @@ end
 -- a busy world hands this handler thousands of blocks a tick and almost all
 -- of them must cost nothing. Plain integer arithmetic; exact. `seed_int` is
 -- the generator's integer form of the seed — the seed itself can be a float.
-local function candidate(x, y, z, one_in)
+local function hash(x, y, z)
     local h = (x * 73856093) ~ (y * 19349663) ~ (z * 83492791) ~ ((spindle.seed_int or 0) * 2654435761)
-    h = h ~ (h >> 17)
-    return h % one_in == 0
+    return h ~ (h >> 17)
 end
+local function candidate(x, y, z, one_in)
+    return hash(x, y, z) % one_in == 0
+end
+
+-- Counts, for the log.
+local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0,
+    no_room = 0, headroom = 0, spacing = 0, unloaded = 0, errors = 0 }
+local last_error = nil
 
 -- Cell masks -----------------------------------------------------------------
 
@@ -151,9 +178,17 @@ local BAR = {
 }
 -- The bottom two layers of cells: a low hump.
 local LOW = 0
-for cz = 0, 2 do
-    for cx = 0, 2 do
-        LOW = LOW | bit(cx, 0, cz) | bit(cx, 1, cz)
+-- A log lying along x or z: two cells wide, two tall, through the block.
+local LYING = { x = 0, z = 0 }
+for c = 0, 2 do
+    for d = 0, 2 do
+        LOW = LOW | bit(c, 0, d) | bit(c, 1, d)
+    end
+    for cy = 0, 1 do
+        for cw = 0, 1 do
+            LYING.x = LYING.x | bit(c, cy, cw)
+            LYING.z = LYING.z | bit(cw, cy, c)
+        end
     end
 end
 
@@ -177,11 +212,12 @@ local function ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz)
     return mask
 end
 
--- Writes an ellipsoid of `material` into the world as a batch: its cells go
--- into empty blocks as they are, and a partly filled block it reaches keeps
--- its own cells and becomes `material` with them, so a buried thing stands
--- in a footprint of itself. Whole blocks are left alone — nothing shows
--- there. Used by rocks and root nodes.
+-- Writes an ellipsoid of `material` into the world as part of the current
+-- batch: its cells go into empty blocks as they are, and a partly filled
+-- block it reaches keeps its own cells and becomes `material` with them, so
+-- a buried thing stands in a footprint of itself. (A merge write — cells
+-- into a block that keeps its others — is an engine ask; with it the
+-- footprint goes away.) Whole blocks are left alone: nothing shows there.
 local function push_ellipsoid(material, cx, cy, cz, rx, ry, rz)
     for bz = math.floor(cz - rz), math.floor(cz + rz) do
         for by = math.floor(cy - ry), math.floor(cy + ry) do
@@ -198,43 +234,77 @@ local function push_ellipsoid(material, cx, cy, cz, rx, ry, rz)
     end
 end
 
--- Trees ----------------------------------------------------------------------
-
-local function place_leaves(leaf_masks, key, mask)
-    leaf_masks[key] = (leaf_masks[key] or 0) | mask
+-- Between two bounds, inclusive, from the stream.
+local function pick(rng, range)
+    return range[1] + rng:below(range[2] + 1)
 end
 
-local function grow_tree(x, y, z, rng)
-    local height = TRUNK_MIN + rng:below(TRUNK_EXTRA)
-    -- Headroom over the trunk.
-    for dy = 1, height + 4 do
-        if not is_empty(at(x, y + dy, z)) then
-            return false
-        end
-    end
-    -- Spacing: no trunk within TREE_SPACING, checked on a ring of points at
-    -- chest height rather than every block of the square.
-    for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } }) do
-        for r = 2, TREE_SPACING do
-            if holds(at(x + d[1] * r, y + 2, z + d[2] * r), blocks.oak_log) then
-                return false
-            end
-        end
-    end
+-- Trees ----------------------------------------------------------------------
 
-    -- Roots: the trunk goes down through the grass block and any partial
-    -- ground under it until it stands on a whole block, so on a slope it is
-    -- planted rather than perched.
+-- The foot of a trunk: down through the grass block and any partial ground
+-- under it until it stands on a whole block, so on a slope it is planted
+-- rather than perched. Nil if the ground there is not loaded.
+local function footing(x, y, z)
     local base = y
     for dy = 0, ROOT_DEPTH do
         local b = at(x, y - dy, z)
         if b == nil then
-            return false
+            return nil
         end
         base = y - dy
         if is_whole(b) then
             break
         end
+    end
+    return base
+end
+
+-- Room for a trunk: air over it, and no other trunk within TREE_SPACING,
+-- checked on a ring of points at chest height.
+local function clear_for(x, y, z, height)
+    for dy = 1, height + 4 do
+        if not is_empty(at(x, y + dy, z)) then
+            stats.headroom = stats.headroom + 1
+            return false
+        end
+    end
+    for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } }) do
+        for r = 2, TREE_SPACING do
+            if is_wood(at(x + d[1] * r, y + 2, z + d[2] * r)) then
+                stats.spacing = stats.spacing + 1
+                return false
+            end
+        end
+    end
+    return true
+end
+
+-- A root flare: low humps of wood on the ground beside the foot.
+local function push_flares(x, y, z, base, log, count, rng)
+    local dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+    local first = rng:below(4)
+    for i = 0, count - 1 do
+        local d = dirs[(first + i) % 4 + 1]
+        local fx, fz = x + d[1], z + d[2]
+        for fy = y, base, -1 do
+            local b = at(fx, fy, fz)
+            if b ~= nil and b.occupancy ~= FULL then
+                edits.push({ x = fx, y = fy, z = fz }, log, LOW | b.occupancy)
+                break
+            end
+        end
+    end
+end
+
+local function grow_tree(x, y, z, rng, species)
+    local height = pick(rng, species.trunk)
+    if not clear_for(x, y, z, height) then
+        return false
+    end
+    local base = footing(x, y, z)
+    if base == nil then
+        stats.unloaded = stats.unloaded + 1
+        return false
     end
 
     -- The canopy: a main clump at the top of the trunk and a few side clumps
@@ -244,18 +314,19 @@ local function grow_tree(x, y, z, rng)
     local top = y + height
     local leaf_masks = {}
     local clumps = {}
-    local r = CANOPY_R + rng:below(16) / 16 * CANOPY_R_EXTRA
-    clumps[1] = { cx = x + 0.5, cy = top - 0.5, cz = z + 0.5, rx = r, ry = r * CANOPY_FLAT, rz = r }
-    local count = CLUMPS_MIN + rng:below(CLUMPS_EXTRA)
+    local r = species.canopy[1] + rng:below(16) / 16 * species.canopy[2]
+    clumps[1] = { cx = x + 0.5, cy = top - 0.5, cz = z + 0.5, rx = r, ry = r * species.flat, rz = r }
+    local count = pick(rng, species.clumps)
     for _ = 1, count do
-        local ox = rng:below(7) - 3
-        local oz = rng:below(7) - 3
-        if ox == 0 and oz == 0 then ox = 2 end
-        local oy = -1 - rng:below(3)
-        local sr = 1.8 + rng:below(8) / 8
+        local out = species.clump_out
+        local ox = rng:below(2 * out + 1) - out
+        local oz = rng:below(2 * out + 1) - out
+        if ox == 0 and oz == 0 then ox = out end
+        local oy = -pick(rng, species.clump_drop)
+        local sr = species.clump_r[1] + rng:below(8) / 8 * species.clump_r[2]
         clumps[#clumps + 1] = {
             cx = x + 0.5 + ox, cy = top + 0.5 + oy, cz = z + 0.5 + oz,
-            rx = sr, ry = sr * CANOPY_FLAT + 0.3, rz = sr,
+            rx = sr, ry = sr * species.flat + 0.3, rz = sr,
             branch = { ox = ox, oy = oy, oz = oz },
         }
     end
@@ -265,7 +336,8 @@ local function grow_tree(x, y, z, rng)
                 for bx = math.floor(c.cx - c.rx), math.floor(c.cx + c.rx) do
                     local mask = ellipsoid_mask(bx, by, bz, c.cx, c.cy, c.cz, c.rx, c.ry, c.rz)
                     if mask ~= 0 then
-                        place_leaves(leaf_masks, bx .. ":" .. by .. ":" .. bz, mask)
+                        local key = bx .. ":" .. by .. ":" .. bz
+                        leaf_masks[key] = (leaf_masks[key] or 0) | mask
                     end
                 end
             end
@@ -296,37 +368,22 @@ local function grow_tree(x, y, z, rng)
         end
     end
 
-    -- One batch: the trunk, a root flare of low humps of wood round its
-    -- foot, the wood in the canopy, then the leaves. Leaves never overwrite
-    -- anything.
+    -- One batch: the trunk, the root flare, the wood in the canopy, then the
+    -- leaves. Leaves never overwrite anything.
     if not edits.room() then
+        stats.no_room = stats.no_room + 1
         return false
     end
     edits.begin()
     for by = base, top do
-        edits.push({ x = x, y = by, z = z }, "spindle:oak_log")
+        edits.push({ x = x, y = by, z = z }, species.log)
     end
-    local flares = 2 + rng:below(3)
-    local dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
-    local first = rng:below(4)
-    for i = 0, flares - 1 do
-        local d = dirs[(first + i) % 4 + 1]
-        local fx, fz = x + d[1], z + d[2]
-        -- The flare sits on whatever the ground is beside the trunk: the
-        -- first block above a whole one, up to the grass line.
-        for fy = y, base, -1 do
-            local b = at(fx, fy, fz)
-            if b ~= nil and b.occupancy ~= FULL then
-                edits.push({ x = fx, y = fy, z = fz }, "spindle:oak_log", LOW | b.occupancy)
-                break
-            end
-        end
-    end
+    push_flares(x, y, z, base, species.log, pick(rng, species.flares), rng)
     for key, mask in pairs(branch_masks) do
         local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
         bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
         if not (bx == x and bz == z) and is_empty(at(bx, by, bz)) then
-            edits.push({ x = bx, y = by, z = bz }, "spindle:oak_log", mask)
+            edits.push({ x = bx, y = by, z = bz }, species.log, mask)
         end
         leaf_masks[key] = nil
     end
@@ -334,8 +391,106 @@ local function grow_tree(x, y, z, rng)
         local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
         bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
         if not (bx == x and bz == z and by <= top) and is_empty(at(bx, by, bz)) then
-            edits.push({ x = bx, y = by, z = bz }, "spindle:oak_leaves", mask)
+            edits.push({ x = bx, y = by, z = bz }, species.leaves, mask)
         end
+    end
+    return edits.commit()
+end
+
+-- Dead wood -------------------------------------------------------------------
+
+-- A snag: a bare trunk, shorter than a living tree, with a stub or two of
+-- branch and a broken top — the top block holds only some of its cells.
+local function grow_snag(x, y, z, rng)
+    local height = 4 + rng:below(5)
+    if not clear_for(x, y, z, height) then
+        return false
+    end
+    local base = footing(x, y, z)
+    if base == nil then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
+    if not edits.room() then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    local top = y + height
+    edits.begin()
+    for by = base, top - 1 do
+        edits.push({ x = x, y = by, z = z }, "spindle:dead_wood")
+    end
+    -- The broken top: the bottom layer and a few cells above it.
+    local jag = 0
+    for c = 0, 2 do
+        for d = 0, 2 do
+            jag = jag | bit(c, 0, d)
+        end
+    end
+    for _ = 1, 2 + rng:below(4) do
+        jag = jag | bit(rng:below(3), 1, rng:below(3))
+    end
+    jag = jag | bit(rng:below(3), 2, rng:below(3))
+    edits.push({ x = x, y = top, z = z }, "spindle:dead_wood", jag)
+    -- Stubs: one or two bars out from the upper trunk.
+    for _ = 1, 1 + rng:below(2) do
+        local dirs = { { 1, 0, "x" }, { -1, 0, "x" }, { 0, 1, "z" }, { 0, -1, "z" } }
+        local d = dirs[rng:below(4) + 1]
+        local sy = top - 1 - rng:below(math.max(1, height - 2))
+        local sx, sz = x + d[1], z + d[2]
+        if is_empty(at(sx, sy, sz)) then
+            edits.push({ x = sx, y = sy, z = sz }, "spindle:dead_wood", BAR[d[3]])
+        end
+    end
+    push_flares(x, y, z, base, "spindle:dead_wood", rng:below(3), rng)
+    return edits.commit()
+end
+
+-- A fallen trunk: a log two cells thick lying along x or z, four to seven
+-- blocks long, sunk into the ground — the surface blocks it lies in keep
+-- their cells and become wood with them, so it reads as half in the turf.
+-- Its far end drops with the ground if the ground drops.
+local function lay_log(x, y, z, rng)
+    if not edits.room() then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    local along_x = rng:next_bool()
+    local dir = rng:next_bool() and 1 or -1
+    local length = 4 + rng:below(4)
+    local lying = along_x and LYING.x or LYING.z
+    local placed = 0
+    edits.begin()
+    for i = 0, length - 1 do
+        local lx = along_x and x + i * dir or x
+        local lz = along_x and z or z + i * dir
+        -- The block whose cells this stretch of log shares: the surface block
+        -- at this column, found from the start height downwards, then up.
+        local ly = nil
+        for dy = 0, -2, -1 do
+            local b = at(lx, y + dy, lz)
+            if b ~= nil and b.occupancy ~= 0 and b.occupancy ~= FULL then
+                ly = y + dy
+                break
+            end
+        end
+        if ly == nil and is_empty(at(lx, y, lz)) and is_whole(at(lx, y - 1, lz)) then
+            ly = y
+        end
+        if ly ~= nil then
+            local b = at(lx, ly, lz)
+            local mask = lying
+            if i == length - 1 and rng:next_bool() then
+                mask = mask & ~(along_x and (bit(2, 0, 0) | bit(2, 1, 0) | bit(2, 0, 1) | bit(2, 1, 1))
+                    or (bit(0, 0, 2) | bit(1, 0, 2) | bit(0, 1, 2) | bit(1, 1, 2)))
+            end
+            edits.push({ x = lx, y = ly, z = lz }, "spindle:dead_wood", mask | (b and b.occupancy or 0))
+            placed = placed + 1
+        end
+    end
+    if placed < 3 then
+        edits.commit()          -- an empty-enough batch; commit clears it
+        return false
     end
     return edits.commit()
 end
@@ -349,6 +504,7 @@ end
 -- where they may grow at all.
 local function place_rock(x, y, z, rng, root)
     if not edits.room() then
+        stats.no_room = stats.no_room + 1
         return false
     end
     local r = ROCK_R_MIN + rng:below(9) / 8 * ROCK_R_EXTRA
@@ -396,6 +552,10 @@ local function dig_pool(x, y, z)
             end
         end
     end
+    if not edits.room() then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
     local water = {}
     edits.begin()
     for dz = -POOL_R, POOL_R do
@@ -428,18 +588,23 @@ end
 
 -- The random tick -------------------------------------------------------------
 
-game.register_random_tick(blocks.grass, function(event)
-    local x, y, z = event.x, event.y, event.z
-    if not edits.room() or not in_ring(x, z) then
+local function on_grass(x, y, z)
+    stats.turns = stats.turns + 1
+    if not in_ring(x, z) then
         return
     end
     if candidate(x, y, z, POOL_CHANCE) then
-        dig_pool(x, y, z)
+        if dig_pool(x, y, z) then stats.pools = stats.pools + 1 end
         return
     end
     local rock = candidate(x, y, z, ROCK_CHANCE)
         and candidate(x // ROCK_PATCH, 7, z // ROCK_PATCH, ROCK_PATCH_ONE_IN)
     if not rock and not candidate(x, y, z, TREE_CHANCE) then
+        return
+    end
+    stats.candidates = stats.candidates + 1
+    if not edits.room() then
+        stats.no_room = stats.no_room + 1
         return
     end
     -- One stream per block, so two grass blocks in one chunk do not grow the
@@ -448,10 +613,52 @@ game.register_random_tick(blocks.grass, function(event)
         { x = x // 16, y = y // 16, z = z // 16, seed = spindle.seed or 0 },
         "grow:" .. x .. ":" .. y .. ":" .. z)
     if rock then
-        place_rock(x, y, z, rng, candidate(x, y, z, ROOT_SHARE))
+        if place_rock(x, y, z, rng, candidate(x, y, z, ROOT_SHARE)) then
+            stats.rocks = stats.rocks + 1
+        end
+        return
+    end
+    stats.attempts = stats.attempts + 1
+    -- Which tree: the hash again, on a different axis so it is independent
+    -- of being a candidate at all.
+    local kind = hash(x, y + 1, z)
+    local grown
+    if kind % DEAD_ONE_IN == 0 then
+        grown = (kind // DEAD_ONE_IN) % 2 == 0 and grow_snag(x, y, z, rng) or lay_log(x, y, z, rng)
+    elseif kind % BIRCH_ONE_IN == 0 then
+        grown = grow_tree(x, y, z, rng, BIRCH)
     else
-        grow_tree(x, y, z, rng)
+        grown = grow_tree(x, y, z, rng, OAK)
+    end
+    if grown then
+        stats.grown = stats.grown + 1
+    end
+end
+
+game.register_random_tick(blocks.grass, function(event)
+    local ok, err = pcall(on_grass, event.x, event.y, event.z)
+    if not ok then
+        stats.errors = stats.errors + 1
+        if last_error ~= tostring(err) then
+            last_error = tostring(err)
+            game.log("spindle woodlands: grass tick failed: " .. last_error)
+        end
     end
 end)
 
-game.log("spindle: woodlands grow trees, rocks, root nodes and pools by random tick")
+local ticks = 0
+game.register_on_tick(function(dt_ticks)
+    ticks = ticks + dt_ticks
+    if ticks >= STATS_EVERY then
+        ticks = 0
+        game.log(string.format(
+            "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d pools; refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d; batches waiting %d",
+            stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.pools,
+            stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, edits.waiting()))
+        for key in pairs(stats) do
+            stats[key] = 0
+        end
+    end
+end)
+
+game.log("spindle: woodlands grow oaks, birches, dead wood, rocks, root nodes and pools by random tick")

@@ -38,6 +38,8 @@ BLOCKS = {
     "creek_bed":      ( 96,  92,  84, 14),
     "limestone":      (188, 178, 150, 10),
     "granite":        (140, 132, 130, 18),
+    "birch_log":      (214, 208, 196, 14),
+    "dead_wood":      (112, 104,  92, 12),
 }
 
 # Alpha per texture; everything not listed is opaque.

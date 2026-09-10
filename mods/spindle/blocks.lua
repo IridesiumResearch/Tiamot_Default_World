@@ -56,6 +56,8 @@ block("creek_bed", "Creek bed", "Wet gravel along a seasonal creek.", { hardness
 block("limestone", "Limestone", "Weathered, pale, soft-edged.", { hardness = 1.2, tint = ROCK })
 block("granite", "Granite", "Weathered, grey, speckled.", { hardness = 2.0, tint = ROCK })
 block("oak_log", "Oak log", "Trunk of a temperate oak.", { hardness = 1.0, tint = SOIL })
+block("birch_log", "Birch log", "Pale, papery bark.", { hardness = 0.9, tint = ROCK })
+block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = ROCK })
 -- Transparent: a face draws only where one side of it is leaves, so a canopy
 -- is a shell rather than a stack of boxes, and light reaches the ground.
 block("oak_leaves", "Oak leaves", "Canopy of a temperate oak.", { hardness = 0.2, tint = GREEN, transparent = true })
