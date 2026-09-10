@@ -63,7 +63,7 @@ M.CROWN_U = 0.0064
 -- octaves rather than three is what keeps the crests soft. (The woodland
 -- brief, 2026-09-09, then "60% of that" twice the same day — both the
 -- height and the width. Other rings will want their own terms, masked.)
-M.DETAIL_AMP = 0.02      -- km, x0.42 = +/-8 blocks
+M.DETAIL_AMP = 0.0067    -- km, x0.42 = +/-3 blocks (a third of +/-8, 2026-09-09)
 M.DETAIL_FREQ = 1 / 150
 M.DETAIL_OCTAVES = 2     -- 150 and 75 m. Noise cost is per octave, and the
                          -- terrain is evaluated once per skin fill.

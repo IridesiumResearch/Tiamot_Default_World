@@ -58,7 +58,7 @@ and names any biome that is registered but not yet built.
 
 - **Relief**: 3D fBm with a vertical gradient, masked so the Crown is a
   massif (±1.7 km) and the rings roll gently (±150 m on 12 km), plus the
-  hills you actually walk over: low and rolling, ±8 blocks on 150 m, two
+  hills you actually walk over: low and rolling, ±3 blocks on 150 m, two
   octaves so the crests are soft.
 - **Gullies**: a groove 2½ blocks deep and ~9 wide along the zero crossings
   of a slow noise — meandering, connected creek beds — with a fine noise
