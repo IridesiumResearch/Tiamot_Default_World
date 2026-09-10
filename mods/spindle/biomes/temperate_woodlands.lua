@@ -238,6 +238,10 @@ local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, p
     no_room = 0, headroom = 0, spacing = 0, unloaded = 0, errors = 0 }
 local last_error = nil
 
+-- Declared here and defined with the lady's mantle below, because dead wood
+-- (defined first) sows a patch of it round itself.
+local push_mantle
+
 -- Cell masks -----------------------------------------------------------------
 
 -- Bit for cell (cx, cy, cz), each 0..2, indexed x + 3*y + 9*z.
@@ -829,7 +833,7 @@ end
 -- A patch of lady's mantle round (x, z): rosettes on most columns of a
 -- small disc, a bloom rising over one column in a few. Pushes into the
 -- current batch.
-local function push_mantle(x, y, z, rng)
+function push_mantle(x, y, z, rng)
     local radius = pick(rng, MANTLE_R)
     local placed = 0
     for dz = -radius, radius do
