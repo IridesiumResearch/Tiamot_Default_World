@@ -58,7 +58,8 @@ local FERN_PATCH_MIN = 0.0     -- half the ground is fern country
 local FERN_FREQ = 1 / 4
 local FERN_MIN = 0.02          -- within it, a little under half the cells
 local TUFT_FREQ = 1 / 3
-local TUFT_MIN = 0.16          -- one cell in six or so
+local TUFT_MIN = 0.04          -- a little under half the cell columns of a covered block
+local TUFT_HEIGHT_FREQ = 1 / 2 -- a fine noise: how many cells tall each column's tuft is, one to three
 
 local TREE_CHANCE = 5          -- one grass block in this many is a candidate
 local TREE_SPACING = 3         -- no other trunk within this many blocks (twice the trees of 4)
@@ -153,8 +154,20 @@ spindle.build_biome("temperate_woodlands", function(ctx)
     local fern_patch = n.sub(n.noise("fern_patch", FERN_PATCH_FREQ, 1, 1.0), n.const(FERN_PATCH_MIN))
     local ferns = shape.compile("biome.woodlands.ferns",
         masked(n.min(n.min(over(2), fern_patch), n.sub(n.noise("fern", FERN_FREQ, 1, 1.0), n.const(FERN_MIN)))))
+    -- Tufts: placed per cell so they stand on the surface wherever it is,
+    -- with a height of one to three cells that a fine noise picks per
+    -- column, and about four or five of a block's nine columns taken.
+    -- `a` is height above the ground in km; a column's tuft reaches
+    -- 3 cells * (0.5 + h), h in +/-0.42, so one to nearly three cells.
+    -- 0 < a < R as (R/2) - |a - R/2|: the terrain once, the cheap reach
+    -- term twice, rather than the terrain twice (which is over the op limit).
+    local function reach_half()
+        return n.mul(n.add(n.noise("tuft_height", TUFT_HEIGHT_FREQ, 1, 1.0), n.const(0.5)), n.const(COVER_CELL * 1.5))
+    end
+    local above = n.mul(shape.terrain(false), n.const(-1.0))
+    local tuft_band = n.sub(reach_half(), n.abs(n.sub(above, reach_half())))
     local tufts = shape.compile("biome.woodlands.tufts",
-        masked(n.min(n.min(over(1), n.mul(fern_patch, n.const(-1.0))),
+        masked(n.min(n.min(tuft_band, n.mul(fern_patch, n.const(-1.0))),
             n.sub(n.noise("tuft", TUFT_FREQ, 1, 1.0), n.const(TUFT_MIN)))))
     -- In order: turf everywhere, litter over it in patches, gravel over both
     -- along the creek floors; then the cover over all of it.

@@ -77,7 +77,13 @@ CELL_EDGES = [0, 5, 11, 16]     # the three cells across a 16-pixel face
 DOTS = {
     "oak_leaves": (2.6, 0.4, 0.6),
     "fern":       (2.2, 0.4, 0.8),
-    "tall_grass": (1.8, 0.4, 0.9),
+}
+
+# Grass as a SPRITE: blades, for the engine's card drawing mode (asks, item
+# 8) — a few tapering strokes from the bottom edge, binary alpha. Drawn as
+# cells until then, it reads as a tuft with gaps, which is fine.
+BLADES = {
+    "tall_grass": 7,
 }
 
 
@@ -106,6 +112,23 @@ def texture(name, r, g, b, grain):
     holes: the colour never varies, only whether a pixel is there."""
     holes = HOLES.get(name)
     alpha = ALPHA.get(name, 255)
+    blades = BLADES.get(name)
+    if blades is not None:
+        rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)) + 5)
+        on = [[False] * SIZE for _ in range(SIZE)]
+        for _ in range(blades):
+            x = (next(rng) % (SIZE * 10)) / 10
+            top = 3 + next(rng) % 9                     # blade height in pixels, 3..11
+            lean = ((next(rng) % 1000) / 1000 - 0.5) * 0.5
+            for i in range(top):
+                y = SIZE - 1 - i
+                bx = int(x + lean * i)
+                width = 2 if i < top // 2 else 1        # tapering
+                for w in range(width):
+                    if 0 <= bx + w < SIZE:
+                        on[y][bx + w] = True
+        rows = [[v for x in range(SIZE) for v in (r, g, b, 255 if on[y][x] else 0)] for y in range(SIZE)]
+        return png(SIZE, SIZE, rows)
     dots = DOTS.get(name)
     if dots is not None:
         radius, r_jit, c_jit = dots

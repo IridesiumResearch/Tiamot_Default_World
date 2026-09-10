@@ -60,12 +60,12 @@ block("birch_log", "Birch log", "Pale, papery bark.", { hardness = 0.9, tint = R
 block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = ROCK })
 
 -- Ground cover. Cells, not blocks: a fern is two cell layers of a block, a
--- tuft of grass one, a bramble a tangle of cells over a few blocks. All of
--- them collide, as every block does until the engine has a passable flag
--- (docs/engine-asks.md, item 6); ferns grow in clumps with gaps for that
--- reason, and brambles are meant to be walked round.
-block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, cutout = true })
-block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, cutout = true })
+-- tuft of grass one to three, a bramble a tangle of cells over a few
+-- blocks. Ferns and grass are `passable` — a body walks through them, and
+-- a ray still stops at them so they can be broken (engine 0ab4113);
+-- brambles are meant to be walked round, so they are not.
+block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true })
+block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true })
 block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, cutout = true })
 -- Cutout, not transparent: the OPPOSITE culling rule. Glass hides the face
 -- between two panes; foliage keeps the faces between two leaf blocks,

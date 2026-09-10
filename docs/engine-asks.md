@@ -16,6 +16,27 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
+## 8. Sprite cards for grass, placed by the cell (2026-09-10) — OPEN
+
+**Wanted.** Grass the way Minecraft and Minetest draw it — two crossed
+alpha-tested quads — but standing on the sub-node surface rather than on
+the block grid, so it never floats over a smooth slope, and with heights
+that vary blade to blade.
+
+**Why the mod cannot do it.** Every material is drawn as cells. The mod
+already places grass as cells on the surface, one to three tall per
+column and about half a block's columns taken; it needs the mesher to draw
+those columns as cards instead of cubes.
+
+**Ask.** `register_block{ draw = "card" }`. For every occupied cell column
+of such a block — a run of the material's cells stacked in one (x, z)
+cell position — the mesher emits two crossed quads, centred on that cell,
+one block wide, as tall as the run (a third, two thirds or a whole
+block), alpha-tested like `cutout`, unlit by face normal (both sides).
+Nothing else changes: the cells still exist, collide (until item 6),
+dig and drop. Nine columns a block is the most it can be asked to draw;
+the mod uses four or five.
+
 ## 7. Summaries of partial blocks read as crosses (2026-09-10) — noted
 
 **Seen.** Beyond the view distance the horizon is drawn from LOD summaries,
@@ -23,7 +44,7 @@ and a woodland's trunks — whole blocks minus their corner columns — come
 out as "+" shapes floating at canopy height, with small leaf clumps as
 lone crosses. Not a mod matter; recorded so it is not chased as one.
 
-## 6. A passable block (2026-09-10) — OPEN
+## 6. A passable block (2026-09-10) — LANDED (engine 0ab4113); ferns and tufts declare it, brambles do not
 
 **Wanted.** Ground cover: ferns two cells tall, tufts of grass, in
 carpets. A player should walk through them.
