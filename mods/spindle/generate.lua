@@ -109,7 +109,7 @@ game.register_on_generate(function(buf, pos)
     local plain = math.max(shape.plain_at(ulo), shape.plain_at(uhi))
     local relief = plain * NOISE_BOUND * shape.RELIEF_AMP * shape.mask_at(ulo)
         + NOISE_BOUND * shape.DETAIL_AMP + shape.BLUFF_AMP
-        + shape.GULLY_DEPTH * (1.0 + shape.GULLY_ROUGH * NOISE_BOUND) + SAFETY
+        + shape.GULLY_DEPTH + SAFETY
     local tmax = dmax + relief
     local tmin = dmin - relief
 

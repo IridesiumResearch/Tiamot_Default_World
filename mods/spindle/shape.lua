@@ -54,7 +54,8 @@ M.DOME_DROP = 2.5        -- km from summit to rim (rim at +16.5)
 -- DETAIL term below — shorter hills, not taller tilts.
 M.RELIEF_AMP = 4.0       -- km, before the mask
 M.RELIEF_FREQ = 1 / 12000
-M.RELIEF_OCTAVES = 3     -- 12, 6 and 3 km; the detail term carries on from 1.5
+M.RELIEF_OCTAVES = 2     -- 12 and 6 km; the hills carry on from 150 m. Each octave
+                         -- here is paid five times per surface chunk.
 M.RELIEF_FLOOR = 0.09    -- share of relief left outside the Crown (0.25, then 60%, then 60% again)
 M.RELIEF_RAMP = 27.0     -- mask = clamp(1 - RAMP * (u - CROWN_U), FLOOR, 1)
 M.CROWN_U = 0.0064
@@ -76,8 +77,9 @@ M.GULLY_WIDTH = 0.04     -- in the noise's own units (it runs +/-0.42): ~9 block
 M.GULLY_FREQ = 1 / 260
 M.GULLY_OCTAVES = 2
 -- Roughness: a fine noise that moves each bank in and out by a block or so
--- and makes the floor uneven, so the groove is not a perfect V drawn along
--- a perfect line. Depth varies by up to GULLY_ROUGH of itself.
+-- and, the same noise, makes the floor uneven — one node doing both, since
+-- the field is evaluated five times a surface chunk and every noise node in
+-- it is paid five times. The groove is not a perfect V along a perfect line.
 M.GULLY_ROUGH = 0.4
 M.GULLY_ROUGH_FREQ = 1 / 9
 M.GULLY_BANK_WOBBLE = 0.012   -- in the noise's units: about +/-1 block of bank
@@ -230,14 +232,15 @@ end
 -- gully's edge. The same noise node in two programs is the same field. A
 -- fine noise wobbles the banks (added to |n| before the clamp) and roughens
 -- the floor (scaling the result), so the profile is not a perfect V.
-local function rough()
-    return noise("gully_rough", M.GULLY_ROUGH_FREQ, 1, 1.0)
-end
+-- One roughness node serves both: the bank wobble is `|n| + w*r` and the
+-- floor is scaled by `1 + k*r` — but rather than evaluate r twice, the floor
+-- roughness rides on the SAME term: the profile is clamp(1 - (|n| + w*r)/W)
+-- and a rougher floor comes from r moving the whole profile, which is what a
+-- bank that wanders does to the floor under it anyway.
 local function gully_depth()
     local groove = add(abs(noise("gully", M.GULLY_FREQ, M.GULLY_OCTAVES, 1.0)),
-        mul(rough(), const(M.GULLY_BANK_WOBBLE)))
-    local profile = clamp(sub(const(1.0), mul(groove, const(1.0 / M.GULLY_WIDTH))), 0.0, 1.0)
-    return mul(profile, add(const(1.0), mul(rough(), const(M.GULLY_ROUGH))))
+        mul(noise("gully_rough", M.GULLY_ROUGH_FREQ, 1, 1.0), const(M.GULLY_BANK_WOBBLE * (1.0 + M.GULLY_ROUGH))))
+    return clamp(sub(const(1.0), mul(groove, const(1.0 / M.GULLY_WIDTH))), 0.0, 1.0)
 end
 -- Positive on the floor of a gully — the inner two fifths of its width —
 -- for the creek-bed material. Multiplied by the plain mask's complement is
