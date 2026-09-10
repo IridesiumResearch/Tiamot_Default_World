@@ -233,11 +233,11 @@ local function ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz)
 end
 
 -- Writes an ellipsoid of `material` into the world as part of the current
--- batch: its cells go into empty blocks as they are, and a partly filled
--- block it reaches keeps its own cells and becomes `material` with them, so
--- a buried thing stands in a footprint of itself. (A merge write — cells
--- into a block that keeps its others — is an engine ask; with it the
--- footprint goes away.) Whole blocks are left alone: nothing shows there.
+-- batch, MERGED: its cells become the material and every other cell of each
+-- block keeps what it held, so a rock is in the turf rather than standing in
+-- a footprint of its own bounding block. Whole blocks are left alone —
+-- nothing of a buried thing shows there, and merging into one is an edit
+-- per cell.
 local function push_ellipsoid(material, cx, cy, cz, rx, ry, rz)
     for bz = math.floor(cz - rz), math.floor(cz + rz) do
         for by = math.floor(cy - ry), math.floor(cy + ry) do
@@ -246,7 +246,7 @@ local function push_ellipsoid(material, cx, cy, cz, rx, ry, rz)
                 if mask ~= 0 then
                     local b = at(bx, by, bz)
                     if b ~= nil and b.occupancy ~= FULL then
-                        edits.push({ x = bx, y = by, z = bz }, material, mask | b.occupancy)
+                        edits.push({ x = bx, y = by, z = bz }, material, mask, true)
                     end
                 end
             end
@@ -309,7 +309,7 @@ local function push_flares(x, y, z, base, log, count, rng)
         for fy = y, base, -1 do
             local b = at(fx, fy, fz)
             if b ~= nil and b.occupancy ~= FULL then
-                edits.push({ x = fx, y = fy, z = fz }, log, LOW | b.occupancy)
+                edits.push({ x = fx, y = fy, z = fz }, log, LOW, true)
                 break
             end
         end
@@ -462,7 +462,7 @@ local function grow_tree(x, y, z, rng, species)
         else
             local b = at(bx, by, bz)
             if is_empty(b) or (bx == x and bz == z) then
-                edits.push({ x = bx, y = by, z = bz }, species.log, item.mask == FULL and nil or item.mask)
+                edits.push({ x = bx, y = by, z = bz }, species.log, item.mask == FULL and nil or item.mask, true)
             end
         end
     end
@@ -473,29 +473,31 @@ local function grow_tree(x, y, z, rng, species)
     -- lowest leaf, decides the column: empty there, empty above.
     local columns = {}
     for key in pairs(leaf_masks) do
-        if not wood[key] then
-            local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
-            bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
-            local ck = bx .. ":" .. bz
-            local col = columns[ck]
-            if col == nil then
-                columns[ck] = { x = bx, z = bz, low = by }
-            elseif by < col.low then
-                col.low = by
-            end
+        local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
+        bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
+        local ck = bx .. ":" .. bz
+        local col = columns[ck]
+        if col == nil then
+            columns[ck] = { x = bx, z = bz, low = by }
+        elseif by < col.low then
+            col.low = by
         end
     end
     local clear = {}
     for ck, col in pairs(columns) do
         clear[ck] = is_empty(at(col.x, col.low, col.z))
     end
+    -- Merged, so a block that holds branch wood takes leaves in the cells
+    -- the wood does not — a named cell is taken whatever was in it, so the
+    -- wood's cells are left out of the mask rather than trusted to survive.
     for key, mask in pairs(leaf_masks) do
-        if not wood[key] then
-            local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
-            bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
-            if clear[bx .. ":" .. bz] then
-                edits.push({ x = bx, y = by, z = bz }, species.leaves, mask)
-            end
+        local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
+        bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
+        if wood[key] then
+            mask = mask & ~wood[key].mask
+        end
+        if mask ~= 0 and (clear[bx .. ":" .. bz] or wood[key]) then
+            edits.push({ x = bx, y = by, z = bz }, species.leaves, mask, true)
         end
     end
     return edits.commit()
@@ -551,9 +553,9 @@ local function grow_snag(x, y, z, rng)
 end
 
 -- A fallen trunk: a log two cells thick lying along x or z, four to seven
--- blocks long, sunk into the ground — the surface blocks it lies in keep
--- their cells and become wood with them, so it reads as half in the turf.
--- Its far end drops with the ground if the ground drops.
+-- blocks long, merged into the surface blocks it lies in so it reads as
+-- half sunk in the turf. Its far end drops with the ground if the ground
+-- drops.
 local function lay_log(x, y, z, rng)
     if not edits.room() then
         stats.no_room = stats.no_room + 1
@@ -588,7 +590,7 @@ local function lay_log(x, y, z, rng)
                 mask = mask & ~(along_x and (bit(2, 0, 0) | bit(2, 1, 0) | bit(2, 0, 1) | bit(2, 1, 1))
                     or (bit(0, 0, 2) | bit(1, 0, 2) | bit(0, 1, 2) | bit(1, 1, 2)))
             end
-            edits.push({ x = lx, y = ly, z = lz }, "spindle:dead_wood", mask | (b and b.occupancy or 0))
+            edits.push({ x = lx, y = ly, z = lz }, "spindle:dead_wood", mask, true)
             placed = placed + 1
         end
     end

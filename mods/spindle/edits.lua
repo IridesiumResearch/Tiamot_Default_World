@@ -35,12 +35,20 @@ function M.begin()
     current = {}
 end
 
+-- `merge` names the engine's merge write (Sub-Node Contract §7.4): the
+-- cells in `occupancy` become `block` and every other cell keeps what it
+-- held. Without it a masked write replaces the block, cells not named
+-- becoming air — right for something growing into open air, wrong for
+-- anything growing into ground.
+local MERGE = { merge = true }
+
 ---@param position { x: integer, y: integer, z: integer }
 ---@param block string
 ---@param occupancy integer?
-function M.push(position, block, occupancy)
+---@param merge boolean?
+function M.push(position, block, occupancy, merge)
     assert(current, "edits.push outside begin/commit")
-    current[#current + 1] = { position, block, occupancy }
+    current[#current + 1] = { position, block, occupancy, merge and MERGE or nil }
 end
 
 -- Queues the batch. Returns false, with nothing queued, if too many are
@@ -80,7 +88,7 @@ spindle.on_tick(function(dt_ticks)
         batches[head] = nil
         head = head + 1
         for _, edit in ipairs(batch) do
-            game.set_block(edit[1], edit[2], edit[3])
+            game.set_block(edit[1], edit[2], edit[3], edit[4])
         end
         cooldown = BATCH_EVERY
         if head > tail then

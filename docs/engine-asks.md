@@ -4,10 +4,17 @@ What the world mod has needed from the engine, found by building it. Each
 entry says what was seen, why the mod cannot fix it, and the smallest
 engine change that would. Newest first. Items are removed when they land.
 
-*Landed 2026-09-10 (engine 53296a0, 9f01f67, 86cd44e): the serve budget,
-`Density:bounds`, and maps <-> density fields. The mod adopts the bound and
-clamps its noise so the bound is tight; the map node is the erosion work's.
-Items 1, 2 and 4 below are closed and kept for the record.*
+*Landed 2026-09-10: the merge write (`set_block(pos, block, mask, { merge
+= true })`, contract §7.4 — no protocol change, it is the placement rule
+made reachable), the serve budget (53296a0), `Density:bounds` (9f01f67),
+and maps <-> density fields (86cd44e). The mod uses the merge write for
+every runtime structure, the bound for its gate, and clamps its noise so
+the bound is tight; the map node is the erosion work's. Items 0, 1, 2 and 4
+below are closed and kept for the record. Item 3 — structures at
+generation across chunk edges — is the one still open; note from the
+engine that `buf:set_subnode` already preserves a uniform block's other
+cells, so generation-time embedding needs nothing new, only the
+cross-chunk pass.*
 
 ## 0. A merge write: cells into a block that keeps its others (2026-09-09)
 

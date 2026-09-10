@@ -144,7 +144,9 @@ built one at a time in its own file. Built so far:
       four, two to four branches that rise as they reach out and each end in
       a ragged clump of leaves, a crown on top — lumps and gaps, not a blob.
       Dead wood rarer still (one in fourteen): standing snags with a broken
-      top, or fallen trunks sunk into the turf. The grass tick logs its
+      top, or fallen trunks sunk into the turf. Everything placed at runtime
+      uses the engine's merge write, so a rock, a root or a trunk foot names
+      its own cells and the turf keeps the rest. The grass tick logs its
       counts every ten seconds and on `stats` in chat.
       Oaks grow in by random tick on grass: schematics, 8–11 blocks of trunk
       planted down into the ground until it meets a whole block, a canopy of
