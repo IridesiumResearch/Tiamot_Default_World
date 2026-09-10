@@ -63,6 +63,14 @@ fern; a bramble stays a bramble.
 
 ## 5. Per-cell value jitter on a material (2026-09-10) — LANDED as a global one per cent (engine 9caa151), not per material; nothing for the mod to declare
 
+**Follow-up (2026-09-10, later).** The engine agent raised it to 2.5 %
+(`CELL_VARIATION` in `crates/client/src/render/world.wgsl`), and from the
+window that is still too mild: the designer asks for **three times it,
+0.075**. The screenshot test `one_material_is_not_one_flat_colour` bounds
+the measured spread at 10 %, and 2.5 % measured as 2.6 %, so 7.5 % should
+land near 7.8 % — under the bound, but the bound's comment ("catches an
+order-of-magnitude mistake") wants restating alongside the constant.
+
 **Wanted.** Every material is now a single flat colour by design (the
 designer's rule: no picture ever carries variation). What breaks up a flat
 surface should be the renderer's: a very slight, random VALUE offset per
