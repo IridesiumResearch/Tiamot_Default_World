@@ -84,16 +84,19 @@ local OAK = {
     flares = { 2, 3 },
     hollow_one_in = HOLLOW_ONE_IN,  -- a den under the roots, now and then
 }
+-- Aspen: tall and narrow, and leafy the way a column is leafy — three to
+-- five short branches stacked up the top half of the trunk, each with a
+-- small clump hugging it, and a crown taller than it is wide.
 local ASPEN = {
     log = "spindle:birch_log", leaves = "spindle:oak_leaves",
     trunk = { 10, 5 },
-    fork_one_in = 8,
-    branches = { 1, 2 },
-    branch_out = { 1, 2 },
-    branch_up = { 1, 2 },
-    clump = { 1.3, 0.8 },
-    crown = { 1.6, 0.8 },
-    flat = 1.1,
+    fork_one_in = 10,
+    branches = { 3, 2 },
+    branch_out = { 1, 0 },
+    branch_up = { 0, 1 },
+    clump = { 1.5, 0.6 },
+    crown = { 1.5, 0.6 },
+    flat = 1.25,
     flares = { 0, 2 },
 }
 local BIRCH = ASPEN                -- the block is still called birch_log

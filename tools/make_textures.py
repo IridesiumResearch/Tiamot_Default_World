@@ -64,12 +64,21 @@ ALPHA = {
 # is nothing to sort and nothing to blend. At the 16-pixel tile a cell is 5
 # or 6 pixels wide, so each of the nine is about two pixels.
 HOLES = {
-    "oak_leaves": 0.35,
-    "fern": 0.45,
-    "tall_grass": 0.55,
     "bramble": 0.50,
 }
 CELL_EDGES = [0, 5, 11, 16]     # the three cells across a 16-pixel face
+
+# Leaves as ROUND DOTS: one pixel-circle per sub-node face, a little smaller
+# than the cell so its corners are open, with the centre nudged and the
+# radius varied per cell so the pattern does not repeat across a canopy.
+# Read as round leaf clusters at a distance and as a cloud of dots up close,
+# in the game's crisp style rather than a painterly one. Binary alpha.
+# name -> (radius in pixels, radius jitter, centre jitter)
+DOTS = {
+    "oak_leaves": (2.6, 0.4, 0.6),
+    "fern":       (2.2, 0.4, 0.8),
+    "tall_grass": (1.8, 0.4, 0.9),
+}
 
 
 def lcg(seed):
@@ -97,6 +106,28 @@ def texture(name, r, g, b, grain):
     holes: the colour never varies, only whether a pixel is there."""
     holes = HOLES.get(name)
     alpha = ALPHA.get(name, 255)
+    dots = DOTS.get(name)
+    if dots is not None:
+        radius, r_jit, c_jit = dots
+        rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)) + 11)
+        discs = []
+        for cy in range(3):
+            for cx in range(3):
+                x0, x1 = CELL_EDGES[cx], CELL_EDGES[cx + 1]
+                y0, y1 = CELL_EDGES[cy], CELL_EDGES[cy + 1]
+                mx = (x0 + x1) / 2 + ((next(rng) % 1000) / 1000 - 0.5) * 2 * c_jit
+                my = (y0 + y1) / 2 + ((next(rng) % 1000) / 1000 - 0.5) * 2 * c_jit
+                rr = radius + ((next(rng) % 1000) / 1000 - 0.5) * 2 * r_jit
+                discs.append((mx, my, rr * rr))
+        rows = []
+        for y in range(SIZE):
+            row = []
+            for x in range(SIZE):
+                px, py = x + 0.5, y + 0.5
+                on = any((px - mx) ** 2 + (py - my) ** 2 <= r2 for mx, my, r2 in discs)
+                row += [r, g, b, 255 if on else 0]
+            rows.append(row)
+        return png(SIZE, SIZE, rows)
     if holes is None:
         rows = [[v for _ in range(SIZE) for v in (r, g, b, alpha)] for _ in range(SIZE)]
         return png(SIZE, SIZE, rows)
