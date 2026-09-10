@@ -178,13 +178,10 @@ end)
 
 -- Say "where" in chat to have the server log where you are, in the
 -- Spindle's own terms. For checking the layers against the plan.
-game.register_on_chat(function(event)
-    if event.text ~= "where" then
-        return
-    end
-    local p = where(event.player)
+spindle.on_chat("where", function(player)
+    local p = where(player)
     if p == nil then
-        return false
+        return
     end
     local shape = spindle.shape
     local r2 = (p.x * p.x + p.z * p.z) * 1e-6
@@ -195,7 +192,6 @@ game.register_on_chat(function(event)
     game.log(string.format(
         "spindle where: y=%.0f  Spindle Y=%.2f km  r^2=%.1f km^2 (u=%.4f, ring %s)  ~%.2f km below the base dome",
         p.y, Y, r2, u, ring and ring.id or "beyond the rim", depth))
-    return false
 end)
 
 game.log("spindle: player positions are remembered")

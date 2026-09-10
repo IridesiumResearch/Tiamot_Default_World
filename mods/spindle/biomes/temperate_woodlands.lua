@@ -76,7 +76,7 @@ local POOL_CHANCE = 60000      -- one grass block in this many: very occasional
 local POOL_R = 3               -- radius of the bank, blocks; water is one block down
 local POOL_APART = 24          -- no other water within this many blocks
 
-local STATS_EVERY = 600        -- ticks between log lines: thirty seconds
+local STATS_EVERY = 200        -- ticks between log lines: ten seconds
 
 local blocks = spindle.blocks
 local layers = spindle.layers
@@ -646,19 +646,27 @@ game.register_random_tick(blocks.grass, function(event)
     end
 end)
 
+local function report()
+    game.log(string.format(
+        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d pools; refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
+        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.pools,
+        stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, last_error or "none",
+        edits.waiting()))
+    for key in pairs(stats) do
+        stats[key] = 0
+    end
+end
+
 local ticks = 0
 game.register_on_tick(function(dt_ticks)
     ticks = ticks + dt_ticks
     if ticks >= STATS_EVERY then
         ticks = 0
-        game.log(string.format(
-            "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d pools; refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d; batches waiting %d",
-            stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.pools,
-            stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, edits.waiting()))
-        for key in pairs(stats) do
-            stats[key] = 0
-        end
+        report()
     end
 end)
+
+-- Say "stats" in chat for the counts now, without waiting for the timer.
+spindle.on_chat("stats", report)
 
 game.log("spindle: woodlands grow oaks, birches, dead wood, rocks, root nodes and pools by random tick")
