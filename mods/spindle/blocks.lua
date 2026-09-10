@@ -62,11 +62,19 @@ block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = RO
 -- Ground cover. Cells, not blocks: a fern is two cell layers of a block, a
 -- tuft of grass one to three, a bramble a tangle of cells over a few
 -- blocks. Ferns and grass are `passable` — a body walks through them, and
--- a ray still stops at them so they can be broken (engine 0ab4113);
--- brambles are meant to be walked round, so they are not.
-block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true })
-block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true })
+-- a ray still stops at them so they can be broken; brambles are meant to
+-- be walked round, so they are not. Grass and the flowers are `billboard`:
+-- a run of cells in a column is drawn as ONE camera-facing sprite as tall
+-- as the run, the cells kept for everything else. Ferns stay geometry, in
+-- the round-dot look. Everything soft sways.
+block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true })
+block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true, billboard = true })
 block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, cutout = true })
+-- Lady's mantle: a low rosette of rounded leaves, and its bloom — sprays of
+-- tiny chartreuse flowers, its own colour, placed above a leaf cell so a
+-- patch reads as leaves with blooms rising from them.
+block("ladys_mantle", "Lady's mantle", "A rosette of scalloped leaves.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true, billboard = true })
+block("ladys_mantle_bloom", "Blooming lady's mantle", "Sprays of tiny chartreuse flowers.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true, billboard = true })
 -- Cutout, not transparent: the OPPOSITE culling rule. Glass hides the face
 -- between two panes; foliage keeps the faces between two leaf blocks,
 -- because culled, a canopy is a hollow shell whose alpha holes look straight
@@ -74,7 +82,7 @@ block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint
 -- depth and needs no sorting. The texture's alpha is binary (see
 -- tools/make_textures.py): every sub-node face is a 3x3 of pixels, each
 -- opaque or gone at random.
-block("oak_leaves", "Oak leaves", "Canopy of a temperate oak.", { hardness = 0.2, tint = GREEN, cutout = true })
+block("oak_leaves", "Oak leaves", "Canopy of a temperate oak.", { hardness = 0.2, tint = GREEN, cutout = true, sway = true })
 
 -- Water: the block a full block of the fluid is drawn as, and the fluid.
 block("water", "Water", "Drawn wherever water is. Not something you place.",

@@ -109,6 +109,13 @@ local ROCK_APART = 14          -- no other stone within this many blocks of a ne
 local LONE_ONE_IN = 4          -- one cluster candidate in this many is a single boulder
 local ROOT_SHARE = 5           -- one candidate in this many is a root node, not rocks
 
+local MANTLE_CHANCE = 600      -- one grass block in this many, inside a mantle patch, starts a patch
+local MANTLE_PATCH = 24        -- patches this many blocks square, one in MANTLE_PATCH_ONE_IN
+local MANTLE_PATCH_ONE_IN = 3
+local MANTLE_BY_DEAD_ONE_IN = 2 -- dead wood gets a patch round it this often — not every time
+local MANTLE_R = { 2, 2 }      -- patch radius, blocks
+local MANTLE_BLOOM_ONE_IN = 3  -- columns of the patch that carry a bloom
+
 local BRAMBLE_CHANCE = 700     -- one grass block in this many, inside a bramble patch
 local BRAMBLE_PATCH = 24       -- patches this many blocks square, one in BRAMBLE_PATCH_ONE_IN
 local BRAMBLE_PATCH_ONE_IN = 3
@@ -227,7 +234,7 @@ local function candidate(x, y, z, one_in)
 end
 
 -- Counts, for the log.
-local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0, brambles = 0,
+local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0, brambles = 0, mantle = 0,
     no_room = 0, headroom = 0, spacing = 0, unloaded = 0, errors = 0 }
 local last_error = nil
 
@@ -626,6 +633,9 @@ local function grow_snag(x, y, z, rng)
         end
     end
     push_flares(x, y, z, base, "spindle:dead_wood", rng:below(3), rng)
+    if rng:below(MANTLE_BY_DEAD_ONE_IN) == 0 then
+        push_mantle(x, y, z, rng)
+    end
     return edits.commit()
 end
 
@@ -674,6 +684,9 @@ local function lay_log(x, y, z, rng)
     if placed < 3 then
         edits.commit()          -- an empty-enough batch; commit clears it
         return false
+    end
+    if rng:below(MANTLE_BY_DEAD_ONE_IN) == 0 then
+        push_mantle(x, y, z, rng)
     end
     return edits.commit()
 end
@@ -783,6 +796,74 @@ local function place_bramble(x, y, z, rng)
     return edits.commit()
 end
 
+-- Lady's mantle ------------------------------------------------------------------
+
+-- A cell or two of plant lifted to sit on the surface within its column's
+-- block, merged, split across two blocks where it has to be. Returns
+-- whether anything was placed.
+local function place_column(material, x, ground, z, layers)
+    local by = math.floor(ground)
+    local layer = math.floor((ground - by) * 3) + 1
+    if layer > 2 then by, layer = by + 1, 0 end
+    local mask = 0
+    for l = 0, layers - 1 do
+        mask = mask | (bit(1, l, 1) | bit(0, l, 1) | bit(1, l, 0))
+    end
+    local low = (mask << (9 * layer)) & FULL
+    local high = mask >> (9 * (3 - layer))
+    local placed = false
+    if low ~= 0 then
+        local b = at(x, by, z)
+        if b ~= nil and b.occupancy ~= FULL then
+            edits.push({ x = x, y = by, z = z }, material, low, true)
+            placed = true
+        end
+    end
+    if high ~= 0 and is_empty(at(x, by + 1, z)) then
+        edits.push({ x = x, y = by + 1, z = z }, material, high, true)
+        placed = true
+    end
+    return placed
+end
+
+-- A patch of lady's mantle round (x, z): rosettes on most columns of a
+-- small disc, a bloom rising over one column in a few. Pushes into the
+-- current batch.
+local function push_mantle(x, y, z, rng)
+    local radius = pick(rng, MANTLE_R)
+    local placed = 0
+    for dz = -radius, radius do
+        for dx = -radius, radius do
+            if dx * dx + dz * dz <= radius * radius + 1 and rng:below(5) ~= 0 then
+                local gy, gb = spindle.rocks.surface_at(x + dx, z + dz, y)
+                if gy ~= nil and is_empty(at(x + dx, gy + 1, z + dz)) then
+                    local ground = gy + (gb.occupancy == FULL and 1.0 or 0.6)
+                    if place_column("spindle:ladys_mantle", x + dx, ground, z + dz, 1) then
+                        placed = placed + 1
+                        if rng:below(MANTLE_BLOOM_ONE_IN) == 0 then
+                            place_column("spindle:ladys_mantle_bloom", x + dx, ground + 1.0 / 3, z + dz, 1)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    return placed
+end
+
+local function place_mantle(x, y, z, rng)
+    if not edits.room() then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    edits.begin()
+    if push_mantle(x, y, z, rng) == 0 then
+        edits.commit()
+        return false
+    end
+    return edits.commit()
+end
+
 -- Pools ----------------------------------------------------------------------
 
 -- A vernal pool is dug, not found: a flat patch of grass gets a bank one
@@ -857,7 +938,9 @@ local function on_grass(x, y, z)
         and candidate(x // ROCK_PATCH, 7, z // ROCK_PATCH, ROCK_PATCH_ONE_IN)
     local bramble = not rock and candidate(x, y, z, BRAMBLE_CHANCE)
         and candidate(x // BRAMBLE_PATCH, 11, z // BRAMBLE_PATCH, BRAMBLE_PATCH_ONE_IN)
-    if not rock and not bramble and not candidate(x, y, z, TREE_CHANCE) then
+    local mantle = not rock and not bramble and candidate(x, y, z, MANTLE_CHANCE)
+        and candidate(x // MANTLE_PATCH, 13, z // MANTLE_PATCH, MANTLE_PATCH_ONE_IN)
+    if not rock and not bramble and not mantle and not candidate(x, y, z, TREE_CHANCE) then
         return
     end
     stats.candidates = stats.candidates + 1
@@ -879,6 +962,12 @@ local function on_grass(x, y, z)
     if bramble then
         if place_bramble(x, y, z, rng) then
             stats.brambles = stats.brambles + 1
+        end
+        return
+    end
+    if mantle then
+        if place_mantle(x, y, z, rng) then
+            stats.mantle = stats.mantle + 1
         end
         return
     end
@@ -912,8 +1001,8 @@ end)
 
 local function report()
     game.log(string.format(
-        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d pools; refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
-        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.pools,
+        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d mantle, %d pools; refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
+        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.mantle, stats.pools,
         stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, last_error or "none",
         edits.waiting()))
     for key in pairs(stats) do

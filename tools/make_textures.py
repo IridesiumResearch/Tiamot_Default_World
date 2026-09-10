@@ -39,6 +39,8 @@ BLOCKS = {
     "fern":           ( 56,  92,  58,  0),
     "tall_grass":     (118, 132,  66,  0),
     "bramble":        ( 72,  60,  44,  0),
+    "ladys_mantle":       ( 96, 124,  70,  0),
+    "ladys_mantle_bloom": (172, 176,  92,  0),
     "water":          ( 58,  92, 110,  0),
     "gloam_stone":    ( 74,  78,  90,  0),
     "abyss_stone":    ( 40,  38,  44,  0),
@@ -86,6 +88,16 @@ BLADES = {
     "tall_grass": 7,
 }
 
+# Rosettes and sprays, for the mantle: a rosette is a few round leaves
+# low in the tile, overlapping, on short stems; a spray is thin stems from
+# the bottom edge ending in small dot clusters high in the tile.
+ROSETTES = {
+    "ladys_mantle": 5,
+}
+SPRAYS = {
+    "ladys_mantle_bloom": 5,
+}
+
 
 def lcg(seed):
     state = seed & 0xFFFFFFFF
@@ -112,6 +124,52 @@ def texture(name, r, g, b, grain):
     holes: the colour never varies, only whether a pixel is there."""
     holes = HOLES.get(name)
     alpha = ALPHA.get(name, 255)
+    rosette = ROSETTES.get(name)
+    if rosette is not None:
+        rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)) + 3)
+        discs = []
+        for _ in range(rosette):
+            mx = 3 + (next(rng) % 100) / 10                 # 3 .. 13
+            my = 8 + (next(rng) % 60) / 10                  # 8 .. 14: the lower half
+            rr = 2.4 + (next(rng) % 12) / 10                # 2.4 .. 3.6
+            discs.append((mx, my, rr * rr))
+        rows = []
+        for y in range(SIZE):
+            row = []
+            for x in range(SIZE):
+                px, py = x + 0.5, y + 0.5
+                on = any((px - mx) ** 2 + (py - my) ** 2 <= r2 for mx, my, r2 in discs)
+                # A scallop: the very edge of a disc is nibbled every other pixel.
+                edge = any(r2 - 1.4 <= (px - mx) ** 2 + (py - my) ** 2 <= r2 for mx, my, r2 in discs)
+                if edge and (x + y) % 2 == 0:
+                    on = False
+                row += [r, g, b, 255 if on else 0]
+            rows.append(row)
+        return png(SIZE, SIZE, rows)
+    spray = SPRAYS.get(name)
+    if spray is not None:
+        rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)) + 9)
+        on = [[False] * SIZE for _ in range(SIZE)]
+        for _ in range(spray):
+            x = 4 + (next(rng) % 90) / 10                   # a stem from the bottom
+            lean = ((next(rng) % 1000) / 1000 - 0.5) * 0.6
+            top = 6 + next(rng) % 6                         # stem height 6 .. 11
+            for i in range(top):
+                bx = int(x + lean * i)
+                if 0 <= bx < SIZE:
+                    on[SIZE - 1 - i][bx] = True
+            # The head: a small cluster of dots round the stem's top.
+            hx, hy = x + lean * top, SIZE - 1 - top
+            for _ in range(4 + next(rng) % 4):
+                dx = ((next(rng) % 1000) / 1000 - 0.5) * 4
+                dy = ((next(rng) % 1000) / 1000 - 0.5) * 3
+                px, py = int(hx + dx), int(hy + dy)
+                for ox in (0, 1):
+                    for oy in (0, 1):
+                        if 0 <= px + ox < SIZE and 0 <= py + oy < SIZE:
+                            on[py + oy][px + ox] = True
+        rows = [[v for x in range(SIZE) for v in (r, g, b, 255 if on[y][x] else 0)] for y in range(SIZE)]
+        return png(SIZE, SIZE, rows)
     blades = BLADES.get(name)
     if blades is not None:
         rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)) + 5)

@@ -16,7 +16,7 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
-## 8. Sprite cards for grass, placed by the cell (2026-09-10) — OPEN
+## 8. Sprite cards for grass, placed by the cell (2026-09-10) — LANDED as `billboard` and `sway`; grass, flowers and leaves use them
 
 **Wanted.** Grass the way Minecraft and Minetest draw it — two crossed
 alpha-tested quads — but standing on the sub-node surface rather than on

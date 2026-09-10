@@ -48,6 +48,8 @@ item 5). A textured material is a decision the designer makes by name.
 | `fern` | knee-high carpets, two cells tall, in clumps | asked for 2026-09-10; for reuse |
 | `tall_grass` | tufts one cell tall, where the ferns are not | asked for 2026-09-10; for reuse |
 | `bramble` | wild berry tangles, walked round | asked for 2026-09-10; for reuse |
+| `ladys_mantle` | rosettes in patches, thicker round dead wood; billboard, sways | asked for 2026-09-10; for reuse |
+| `ladys_mantle_bloom` | chartreuse sprays over a mantle leaf; its own single colour | asked for 2026-09-10; for reuse |
 
 The vernal pools' "mud" is `loam`: the turf is three blocks thick and a
 pool's bowl is dug through it, so its sides are grass and its floor soil
