@@ -1,10 +1,11 @@
 # SPDX-FileCopyrightText: Iridesium
 # SPDX-License-Identifier: GPL-3.0-only
-"""Generates the placeholder textures for mods/spindle/textures.
+"""Generates the textures for mods/spindle/textures.
 
-One flat colour per block with a little deterministic grain and a darker
-one-pixel border, so a wall of one material still shows its blocks. No
-dependencies beyond the standard library; run it from the repository root:
+One flat colour per block — nothing else, by design: any variation across a
+surface is the renderer's (tint, and per-cell value jitter once the engine
+has it), never baked into a picture. No dependencies beyond the standard
+library; run it from the repository root:
 
     python tools/make_textures.py
 """
@@ -67,16 +68,10 @@ def png(width, height, rows):
 
 
 def texture(name, r, g, b, grain):
-    rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)))
-    rows = []
-    for y in range(SIZE):
-        row = []
-        for x in range(SIZE):
-            n = (next(rng) % (2 * grain + 1)) - grain
-            edge = x == 0 or y == 0 or x == SIZE - 1 or y == SIZE - 1
-            shade = -18 if edge else 0
-            row += [max(0, min(255, v + n + shade)) for v in (r, g, b)] + [ALPHA.get(name, 255)]
-        rows.append(row)
+    """A single flat colour. The grain and the border are gone (2026-09-10):
+    the designer wants one colour per material, and the per-cell variation
+    is the renderer's to do, not the texture's."""
+    rows = [[v for _ in range(SIZE) for v in (r, g, b, ALPHA.get(name, 255))] for _ in range(SIZE)]
     return png(SIZE, SIZE, rows)
 
 

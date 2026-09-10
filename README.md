@@ -87,8 +87,10 @@ and names any biome that is registered but not yet built.
   (engine `fill_density_detail`, fixed 2026-09-09), so the layers are painted
   in order — dirt shapes the surface, stone from five blocks down, the
   biome's block on top, boulders — each writing only where it is positive.
-- **Tint**: every block declares the engine's large-scale colour field, tone
-  only for rock and a green–yellow hue shift for grass and leaves.
+- **Flat colour, always**: every texture is a single colour; nothing is
+  painted into a picture. Variation is the renderer's: the large-scale
+  `tint` every block declares (tone only for rock, a green–yellow hue shift
+  for grass and leaves), and per-cell value jitter once the engine has it.
 
 Erosion is not here yet and cannot be until the engine can feed a map into a
 density field; what the options are and what each needs is in

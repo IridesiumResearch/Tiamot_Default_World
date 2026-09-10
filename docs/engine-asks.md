@@ -16,6 +16,28 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
+## 5. Per-cell value jitter on a material (2026-09-10) — OPEN
+
+**Wanted.** Every material is now a single flat colour by design (the
+designer's rule: no picture ever carries variation). What breaks up a flat
+surface should be the renderer's: a very slight, random VALUE offset per
+sub-node cell — each cell a hair lighter or darker than its neighbour,
+flat across the cell, world-anchored, the same on every machine.
+
+**Why the mod cannot do it.** The unit is the cell, and only the mesher and
+the world shader know where a cell is. `tint` is the other thing: one
+smooth field per material at a scale of tens of blocks, sampled and
+interpolated (`tint_noise`) — it cannot produce a flat step per cell, and
+a material has one of it.
+
+**Ask.** `register_block{ jitter = 0.04 }`: in the world shader, take the
+cell of the fragment (`floor(world_position * 3)`), hash it with the
+`tint_hash` that already exists, and scale the lit colour by
+`1 + jitter * (hash - 0.5) * 2`. No interpolation — the whole cell gets
+one value. World-anchored like the tint, under the lighting like the tint,
+and `None` on the wire when a material declares none, like the tint. One
+byte per material, no protocol shape change beyond the field.
+
 ## 0. A merge write: cells into a block that keeps its others (2026-09-09)
 
 **Seen.** Surfaces are sub-node smooth, so the block a rock, a root or a
