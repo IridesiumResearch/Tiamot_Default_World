@@ -20,7 +20,7 @@
 -- needs, since water written into a block that is still solid is cleared by
 -- the next fluid tick.
 
-local BATCH_EVERY = 8          -- ticks between batches: two and a half a second
+local BATCH_EVERY = 10         -- ticks between batches: two a second
 local MAX_WAITING = 12         -- batches held; past this, growth is refused until they land
 
 local M = {}

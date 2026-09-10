@@ -10,8 +10,10 @@
 -- gradient changes, broken by shallow gullies and seasonal creek beds. Deep
 -- dark loam and rich grass turf, irregular patches of brown leaf litter,
 -- exposed woody root nodes, and weathered limestone or granite boulders
--- half-buried in the soil. Oaks, with birches here and there, and dead
--- wood — standing snags and fallen trunks — rarer still.
+-- half-buried in the soil. Oaks, with aspens here and there, and dead
+-- wood — standing snags and fallen trunks — rarer still. The trees follow
+-- the Better Trees idiom: rounded trunks, a fork now and then, branches
+-- that each carry a clump of leaves, a canopy that is lumps and gaps.
 --
 -- The hills and the gullies are the terrain field's (shape.lua). What this
 -- file owns is the FLOOR and what stands on it, by two mechanisms:
@@ -52,18 +54,36 @@ local BIRCH_ONE_IN = 7         -- of the trees, one in this many is a birch
 local DEAD_ONE_IN = 14         -- of the trees, one in this many is dead wood (half standing, half fallen)
 local ROOT_DEPTH = 3           -- how far down a trunk may go looking for whole ground
 
--- Species. Trunk heights, the main clump's half-width, how many side clumps
--- and how far below the top they sit, and what they are made of.
+-- Species, in the Better Trees idiom: a trunk that may fork, a few main
+-- branches leaving it at an angle and rising as they go out, and a clump of
+-- leaves at the end of every branch and on the top — so the canopy is a
+-- lumpy union of clumps with gaps between them, not one blob. Numbers are
+-- { least, extra } ranges the stream picks from.
 local OAK = {
     log = "spindle:oak_log", leaves = "spindle:oak_leaves",
-    trunk = { 8, 4 }, canopy = { 3.5, 1.5 }, flat = 0.7, clumps = { 2, 3 }, clump_r = { 1.8, 1.0 },
-    clump_drop = { 1, 3 }, clump_out = 3, flares = { 2, 3 },
+    trunk = { 6, 4 },              -- blocks of trunk before the crown
+    fork_one_in = 4,               -- one oak in this many splits into two leaders
+    branches = { 2, 3 },           -- main branches off the upper trunk
+    branch_out = { 2, 3 },         -- how far a branch reaches sideways
+    branch_up = { 1, 3 },          -- and how far it rises doing so
+    clump = { 2.2, 1.2 },          -- half-width of a branch-tip clump
+    crown = { 2.6, 1.2 },          -- half-width of the clump on the trunk top
+    flat = 0.7,                    -- clump height as a share of its width
+    flares = { 2, 3 },
 }
-local BIRCH = {
+local ASPEN = {
     log = "spindle:birch_log", leaves = "spindle:oak_leaves",
-    trunk = { 11, 5 }, canopy = { 2.0, 0.9 }, flat = 1.1, clumps = { 1, 2 }, clump_r = { 1.3, 0.7 },
-    clump_drop = { 0, 2 }, clump_out = 2, flares = { 0, 2 },
+    trunk = { 10, 5 },
+    fork_one_in = 8,
+    branches = { 1, 2 },
+    branch_out = { 1, 2 },
+    branch_up = { 1, 2 },
+    clump = { 1.3, 0.8 },
+    crown = { 1.6, 0.8 },
+    flat = 1.1,
+    flares = { 0, 2 },
 }
+local BIRCH = ASPEN                -- the block is still called birch_log
 
 local ROCK_CHANCE = 350        -- one grass block in this many, inside a patch
 local ROCK_PATCH = 32          -- patches are this many blocks square...
@@ -262,7 +282,7 @@ end
 -- Room for a trunk: air over it, and no other trunk within TREE_SPACING,
 -- checked on a ring of points at chest height.
 local function clear_for(x, y, z, height)
-    for dy = 1, height + 4 do
+    for dy = 1, height + 6 do
         if not is_empty(at(x, y + dy, z)) then
             stats.headroom = stats.headroom + 1
             return false
@@ -296,6 +316,80 @@ local function push_flares(x, y, z, base, log, count, rng)
     end
 end
 
+-- The four corner columns of a block, and the mask with each of them gone.
+local CORNER = {
+    bit(0, 0, 0) | bit(0, 1, 0) | bit(0, 2, 0),
+    bit(2, 0, 0) | bit(2, 1, 0) | bit(2, 2, 0),
+    bit(0, 0, 2) | bit(0, 1, 2) | bit(0, 2, 2),
+    bit(2, 0, 2) | bit(2, 1, 2) | bit(2, 2, 2),
+}
+local ROUND = FULL & ~(CORNER[1] | CORNER[2] | CORNER[3] | CORNER[4])
+
+-- A trunk block: whole, minus most of its corner columns — each corner is
+-- gone four times in five, so the trunk is round in most places and keeps
+-- a knob or a flat here and there.
+local function trunk_mask(rng)
+    local mask = FULL
+    for _, corner in ipairs(CORNER) do
+        if rng:below(5) ~= 0 then
+            mask = mask & ~corner
+        end
+    end
+    return mask
+end
+
+-- A branch: from (x, y, z) out `out` blocks along the direction (sx, sz),
+-- rising `up` as it goes, one block per step. Thick where it leaves the
+-- trunk (the rounded trunk mask), a two-cell bar along the middle, and a
+-- thin bar at the tip, where it turns upward to meet its clump. Writes into
+-- `wood` (key -> {mask, y}) and returns the tip.
+local function branch(wood, x, y, z, sx, sz, out, up, rng)
+    local bx, by, bz = x, y, z
+    local rises = {}
+    for i = 1, up do
+        rises[1 + rng:below(out)] = (rises[1 + rng:below(out)] or 0) + 1
+    end
+    local along_x = sx ~= 0 and sz == 0
+    for step = 1, out do
+        bx, bz = bx + sx, bz + sz
+        if rises[step] then
+            by = by + rises[step]
+        end
+        local key = bx .. ":" .. by .. ":" .. bz
+        local mask
+        if step == 1 then
+            mask = trunk_mask(rng)
+        elseif step == out then
+            mask = (along_x and BAR.x or BAR.z) | BAR.y
+        else
+            mask = along_x and (LYING.x | (LYING.x << 3)) or (LYING.z | (LYING.z << 3))
+            mask = mask & FULL
+        end
+        wood[key] = { mask = (wood[key] and wood[key].mask or 0) | mask, y = by }
+    end
+    return bx, by, bz
+end
+
+-- A clump of leaves: an ellipsoid, each block of it scaled a little up or
+-- down at random so the surface is ragged rather than smooth.
+local function clump(leaf_masks, cx, cy, cz, r, flat, rng)
+    local rx, rz, ry = r, r, r * flat
+    for bz = math.floor(cz - rz), math.floor(cz + rz) do
+        for by = math.floor(cy - ry), math.floor(cy + ry) do
+            for bx = math.floor(cx - rx), math.floor(cx + rx) do
+                local scale = 0.85 + rng:below(6) / 20
+                local mask = ellipsoid_mask(bx, by, bz, cx, cy, cz, rx * scale, ry * scale, rz * scale)
+                if mask ~= 0 then
+                    local key = bx .. ":" .. by .. ":" .. bz
+                    leaf_masks[key] = (leaf_masks[key] or 0) | mask
+                end
+            end
+        end
+    end
+end
+
+local DIRS = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
+
 local function grow_tree(x, y, z, rng, species)
     -- No room on the queue is the cheapest refusal, so it comes first: a
     -- canopy is a few thousand cell tests, not worth doing to throw away.
@@ -313,87 +407,73 @@ local function grow_tree(x, y, z, rng, species)
         return false
     end
 
-    -- The canopy: a main clump at the top of the trunk and a few side clumps
-    -- around it, each an ellipsoid, unioned cell by cell. The side clumps sit
-    -- a little lower and out to one side, which is what makes it a tree
-    -- rather than a lollipop.
-    local top = y + height
+    local wood = {}          -- key -> { mask, y }
     local leaf_masks = {}
-    local clumps = {}
-    local r = species.canopy[1] + rng:below(16) / 16 * species.canopy[2]
-    clumps[1] = { cx = x + 0.5, cy = top - 0.5, cz = z + 0.5, rx = r, ry = r * species.flat, rz = r }
-    local count = pick(rng, species.clumps)
-    for _ = 1, count do
-        local out = species.clump_out
-        local ox = rng:below(2 * out + 1) - out
-        local oz = rng:below(2 * out + 1) - out
-        if ox == 0 and oz == 0 then ox = out end
-        local oy = -pick(rng, species.clump_drop)
-        local sr = species.clump_r[1] + rng:below(8) / 8 * species.clump_r[2]
-        clumps[#clumps + 1] = {
-            cx = x + 0.5 + ox, cy = top + 0.5 + oy, cz = z + 0.5 + oz,
-            rx = sr, ry = sr * species.flat + 0.3, rz = sr,
-            branch = { ox = ox, oy = oy, oz = oz },
-        }
-    end
-    for _, c in ipairs(clumps) do
-        for bz = math.floor(c.cz - c.rz), math.floor(c.cz + c.rz) do
-            for by = math.floor(c.cy - c.ry), math.floor(c.cy + c.ry) do
-                for bx = math.floor(c.cx - c.rx), math.floor(c.cx + c.rx) do
-                    local mask = ellipsoid_mask(bx, by, bz, c.cx, c.cy, c.cz, c.rx, c.ry, c.rz)
-                    if mask ~= 0 then
-                        local key = bx .. ":" .. by .. ":" .. bz
-                        leaf_masks[key] = (leaf_masks[key] or 0) | mask
-                    end
-                end
-            end
-        end
-    end
+    local top = y + height
 
-    -- Branches: from the trunk's upper part out to each side clump, as thin
-    -- bars of wood, one block per step, taking the longer axis first.
-    local branch_masks = {}
-    for _, c in ipairs(clumps) do
-        if c.branch then
-            local bx, by, bz = x, top + c.branch.oy - 1, z
-            local dx, dz = c.branch.ox, c.branch.oz
-            local steps = math.max(math.abs(dx), math.abs(dz))
-            local sx = dx > 0 and 1 or (dx < 0 and -1 or 0)
-            local sz = dz > 0 and 1 or (dz < 0 and -1 or 0)
-            local along_x = math.abs(dx) >= math.abs(dz)
-            for step = 1, steps do
-                if step <= math.abs(dx) then bx = bx + sx end
-                if step <= math.abs(dz) then bz = bz + sz end
-                if step == steps then by = by + 1 end
-                local key = bx .. ":" .. by .. ":" .. bz
-                branch_masks[key] = (branch_masks[key] or 0) | (along_x and BAR.x or BAR.z)
-                if step == steps then
-                    branch_masks[key] = branch_masks[key] | BAR.y
-                end
-            end
-        end
-    end
-
-    -- One batch: the trunk, the root flare, the wood in the canopy, then the
-    -- leaves. Leaves never overwrite anything.
-    edits.begin()
+    -- The trunk: whole in the ground, rounded above it.
     for by = base, top do
-        edits.push({ x = x, y = by, z = z }, species.log)
+        local mask = by <= y and FULL or trunk_mask(rng)
+        wood[x .. ":" .. by .. ":" .. z] = { mask = mask, y = by }
+    end
+    -- A fork: a second leader leaving diagonally at about half height and
+    -- rising three or four blocks, with a crown of its own.
+    if rng:below(species.fork_one_in) == 0 then
+        local d = DIRS[rng:below(4) + 1]
+        local fy = y + math.max(2, height // 2)
+        local fx, fz = x, z
+        local rise = 3 + rng:below(2)
+        for i = 1, rise do
+            if i <= 2 then
+                fx, fz = fx + d[1], fz + d[2]
+            end
+            fy = fy + 1
+            wood[fx .. ":" .. fy .. ":" .. fz] = { mask = trunk_mask(rng), y = fy }
+        end
+        clump(leaf_masks, fx + 0.5, fy + 0.5, fz + 0.5, pick(rng, species.clump), species.flat, rng)
+    end
+    -- Main branches off the upper trunk, each with a clump at its tip. They
+    -- leave in different directions: the first is random, the rest go round.
+    local count = pick(rng, species.branches)
+    local first = rng:below(4)
+    for i = 0, count - 1 do
+        local d = DIRS[(first + i) % 4 + 1]
+        local from = y + math.max(2, height * 3 // 5) + rng:below(math.max(1, height * 2 // 5))
+        local tx, ty, tz = branch(wood, x, math.min(from, top - 1), z, d[1], d[2],
+            pick(rng, species.branch_out), pick(rng, species.branch_up), rng)
+        clump(leaf_masks, tx + 0.5, ty + 1.0, tz + 0.5, pick(rng, species.clump), species.flat, rng)
+    end
+    -- The crown on the trunk top.
+    clump(leaf_masks, x + 0.5, top + 0.5, z + 0.5, pick(rng, species.crown), species.flat, rng)
+
+    -- One batch: wood from the ground up (so the tree reads as growing),
+    -- the root flare, then leaves wherever there is air and no wood.
+    edits.begin()
+    local keys = {}
+    for key, entry in pairs(wood) do
+        keys[#keys + 1] = { key = key, y = entry.y, mask = entry.mask }
+    end
+    table.sort(keys, function(p, q) return p.y < q.y or (p.y == q.y and p.key < q.key) end)
+    for _, item in ipairs(keys) do
+        local bx, by, bz = item.key:match("^(-?%d+):(-?%d+):(-?%d+)$")
+        bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
+        if by <= y and bx == x and bz == z then
+            edits.push({ x = bx, y = by, z = bz }, species.log)
+        else
+            local b = at(bx, by, bz)
+            if is_empty(b) or (bx == x and bz == z) then
+                edits.push({ x = bx, y = by, z = bz }, species.log, item.mask == FULL and nil or item.mask)
+            end
+        end
     end
     push_flares(x, y, z, base, species.log, pick(rng, species.flares), rng)
-    for key, mask in pairs(branch_masks) do
-        local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
-        bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
-        if not (bx == x and bz == z) and is_empty(at(bx, by, bz)) then
-            edits.push({ x = bx, y = by, z = bz }, species.log, mask)
-        end
-        leaf_masks[key] = nil
-    end
     for key, mask in pairs(leaf_masks) do
-        local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
-        bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
-        if not (bx == x and bz == z and by <= top) and is_empty(at(bx, by, bz)) then
-            edits.push({ x = bx, y = by, z = bz }, species.leaves, mask)
+        if not wood[key] then
+            local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
+            bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
+            if is_empty(at(bx, by, bz)) then
+                edits.push({ x = bx, y = by, z = bz }, species.leaves, mask)
+            end
         end
     end
     return edits.commit()
