@@ -467,11 +467,33 @@ local function grow_tree(x, y, z, rng, species)
         end
     end
     push_flares(x, y, z, base, species.log, pick(rng, species.flares), rng)
+    -- Leaves go only where there is air, but reading every leaf block back
+    -- is three hundred calls a tree and was most of the mod's tick. Terrain
+    -- does not overhang a canopy from above, so one read per COLUMN, at its
+    -- lowest leaf, decides the column: empty there, empty above.
+    local columns = {}
+    for key in pairs(leaf_masks) do
+        if not wood[key] then
+            local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
+            bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
+            local ck = bx .. ":" .. bz
+            local col = columns[ck]
+            if col == nil then
+                columns[ck] = { x = bx, z = bz, low = by }
+            elseif by < col.low then
+                col.low = by
+            end
+        end
+    end
+    local clear = {}
+    for ck, col in pairs(columns) do
+        clear[ck] = is_empty(at(col.x, col.low, col.z))
+    end
     for key, mask in pairs(leaf_masks) do
         if not wood[key] then
             local bx, by, bz = key:match("^(-?%d+):(-?%d+):(-?%d+)$")
             bx, by, bz = tonumber(bx), tonumber(by), tonumber(bz)
-            if is_empty(at(bx, by, bz)) then
+            if clear[bx .. ":" .. bz] then
                 edits.push({ x = bx, y = by, z = bz }, species.leaves, mask)
             end
         end
