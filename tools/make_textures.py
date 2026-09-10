@@ -57,6 +57,20 @@ ALPHA = {
     "water": 150,
 }
 
+# Foliage: the share of pixels that are HOLES. A block face is three cells
+# across; each cell's face is split into a 3x3 of pixels and each pixel is
+# fully opaque or fully gone, at random, from a stream seeded by the name.
+# Binary alpha on purpose — the client alpha-tests foliage at 0.5, so there
+# is nothing to sort and nothing to blend. At the 16-pixel tile a cell is 5
+# or 6 pixels wide, so each of the nine is about two pixels.
+HOLES = {
+    "oak_leaves": 0.35,
+    "fern": 0.45,
+    "tall_grass": 0.55,
+    "bramble": 0.50,
+}
+CELL_EDGES = [0, 5, 11, 16]     # the three cells across a 16-pixel face
+
 
 def lcg(seed):
     state = seed & 0xFFFFFFFF
@@ -79,8 +93,32 @@ def png(width, height, rows):
 def texture(name, r, g, b, grain):
     """A single flat colour. The grain and the border are gone (2026-09-10):
     the designer wants one colour per material, and the per-cell variation
-    is the renderer's to do, not the texture's."""
-    rows = [[v for _ in range(SIZE) for v in (r, g, b, ALPHA.get(name, 255))] for _ in range(SIZE)]
+    is the renderer's to do, not the texture's. Foliage additionally has
+    holes: the colour never varies, only whether a pixel is there."""
+    holes = HOLES.get(name)
+    alpha = ALPHA.get(name, 255)
+    if holes is None:
+        rows = [[v for _ in range(SIZE) for v in (r, g, b, alpha)] for _ in range(SIZE)]
+        return png(SIZE, SIZE, rows)
+    rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)) + 7)
+    # One decision per sub-pixel of each cell: a 9x9 grid of decisions over
+    # the face, each covering about two texture pixels.
+    keep = {}
+    for cy in range(3):
+        for cx in range(3):
+            for sy in range(3):
+                for sx in range(3):
+                    keep[(cx, sx, cy, sy)] = (next(rng) % 1000) >= holes * 1000
+    rows = []
+    for y in range(SIZE):
+        cy = next(i for i in range(3) if CELL_EDGES[i] <= y < CELL_EDGES[i + 1])
+        sy = min(2, (y - CELL_EDGES[cy]) * 3 // (CELL_EDGES[cy + 1] - CELL_EDGES[cy]))
+        row = []
+        for x in range(SIZE):
+            cx = next(i for i in range(3) if CELL_EDGES[i] <= x < CELL_EDGES[i + 1])
+            sx = min(2, (x - CELL_EDGES[cx]) * 3 // (CELL_EDGES[cx + 1] - CELL_EDGES[cx]))
+            row += [r, g, b, 255 if keep[(cx, sx, cy, sy)] else 0]
+        rows.append(row)
     return png(SIZE, SIZE, rows)
 
 

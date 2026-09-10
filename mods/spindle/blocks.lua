@@ -64,12 +64,17 @@ block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = RO
 -- them collide, as every block does until the engine has a passable flag
 -- (docs/engine-asks.md, item 6); ferns grow in clumps with gaps for that
 -- reason, and brambles are meant to be walked round.
-block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, transparent = true })
-block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, transparent = true })
-block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, transparent = true })
--- Transparent: a face draws only where one side of it is leaves, so a canopy
--- is a shell rather than a stack of boxes, and light reaches the ground.
-block("oak_leaves", "Oak leaves", "Canopy of a temperate oak.", { hardness = 0.2, tint = GREEN, transparent = true })
+block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, cutout = true })
+block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, cutout = true })
+block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, cutout = true })
+-- Cutout, not transparent: the OPPOSITE culling rule. Glass hides the face
+-- between two panes; foliage keeps the faces between two leaf blocks,
+-- because culled, a canopy is a hollow shell whose alpha holes look straight
+-- through at the sky. Alpha-tested with the opaque world, so it writes
+-- depth and needs no sorting. The texture's alpha is binary (see
+-- tools/make_textures.py): every sub-node face is a 3x3 of pixels, each
+-- opaque or gone at random.
+block("oak_leaves", "Oak leaves", "Canopy of a temperate oak.", { hardness = 0.2, tint = GREEN, cutout = true })
 
 -- Water: the block a full block of the fluid is drawn as, and the fluid.
 block("water", "Water", "Drawn wherever water is. Not something you place.",

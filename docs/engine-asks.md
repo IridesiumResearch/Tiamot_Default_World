@@ -16,6 +16,13 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
+## 7. Summaries of partial blocks read as crosses (2026-09-10) — noted
+
+**Seen.** Beyond the view distance the horizon is drawn from LOD summaries,
+and a woodland's trunks — whole blocks minus their corner columns — come
+out as "+" shapes floating at canopy height, with small leaf clumps as
+lone crosses. Not a mod matter; recorded so it is not chased as one.
+
 ## 6. A passable block (2026-09-10) — OPEN
 
 **Wanted.** Ground cover: ferns two cells tall, tufts of grass, in
@@ -33,7 +40,7 @@ left out of the collision lattice (and of pathfinding's floor test) and
 otherwise unchanged — drawn, lit, dug, dropped. A player walks through a
 fern; a bramble stays a bramble.
 
-## 5. Per-cell value jitter on a material (2026-09-10) — OPEN
+## 5. Per-cell value jitter on a material (2026-09-10) — LANDED as a global one per cent (engine 9caa151), not per material; nothing for the mod to declare
 
 **Wanted.** Every material is now a single flat colour by design (the
 designer's rule: no picture ever carries variation). What breaks up a flat
