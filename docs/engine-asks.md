@@ -4,6 +4,11 @@ What the world mod has needed from the engine, found by building it. Each
 entry says what was seen, why the mod cannot fix it, and the smallest
 engine change that would. Newest first. Items are removed when they land.
 
+*Landed 2026-09-10 (engine 53296a0, 9f01f67, 86cd44e): the serve budget,
+`Density:bounds`, and maps <-> density fields. The mod adopts the bound and
+clamps its noise so the bound is tight; the map node is the erosion work's.
+Items 1, 2 and 4 below are closed and kept for the record.*
+
 ## 0. A merge write: cells into a block that keeps its others (2026-09-09)
 
 **Seen.** Surfaces are sub-node smooth, so the block a rock, a root or a

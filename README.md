@@ -77,6 +77,11 @@ and names any biome that is registered but not yet built.
   biome and puts it over the whole surface, ignoring its ring and humidity,
   so one biome can be looked at on its own. Currently `temperate_woodlands`;
   set it to `nil` for the real world.
+- **Bounds, not guesses**: the generator reads the terrain field's range
+  over each chunk from the engine's interval bound (`Density:bounds`), and
+  every noise node is clamped to the range the fractal actually uses so that
+  bound is tight — so chunks the surface cannot reach cost nothing, for every
+  fill, without the gate's arithmetic ever drifting from the field.
 - **Sub-node surfaces**: every fill a player can see runs with
   `{ detail = "smooth" }`, so slopes are slopes. Fills ADD at cell resolution
   (engine `fill_density_detail`, fixed 2026-09-09), so the layers are painted

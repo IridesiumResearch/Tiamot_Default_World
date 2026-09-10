@@ -180,8 +180,18 @@ local function mul(a, b) return { op = "mul", a = a, b = b } end
 local function min(a, b) return { op = "min", a = a, b = b } end
 local function clamp(a, lo, hi) return { op = "clamp", a = a, low = lo, high = hi } end
 local function abs(a) return { op = "abs", a = a } end
+-- Every noise node is CLAMPED to +/-NOISE_RANGE of its amplitude. The
+-- fractal never leaves that range (it runs to about +/-0.42), so the clamp
+-- changes no terrain; what it changes is what the engine can PROVE about
+-- the field. `Density:bounds` is an interval extension, and its bound on a
+-- bare noise node is 3.78x the amplitude — safe, and so wide that no chunk
+-- under a relief term is ever decided. A clamp's interval is the clamp, so
+-- with it the engine skips a chunk the surface cannot reach before any
+-- evaluation, for every fill, and the generator's gate reads the same bound.
+M.NOISE_RANGE = 0.5
 local function noise(stream, frequency, octaves, amplitude)
-    return { op = "noise", stream = stream, frequency = frequency, octaves = octaves, amplitude = amplitude }
+    local raw = { op = "noise", stream = stream, frequency = frequency, octaves = octaves, amplitude = amplitude }
+    return { op = "clamp", a = raw, low = -M.NOISE_RANGE * amplitude, high = M.NOISE_RANGE * amplitude }
 end
 M.node = { const = const, X = X, Y = Y, Z = Z, add = add, sub = sub, mul = mul, min = min, clamp = clamp, abs = abs, noise = noise }
 

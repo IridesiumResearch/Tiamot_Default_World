@@ -1,6 +1,11 @@
 # SPDX-FileCopyrightText: Iridesium
 # SPDX-License-Identifier: GPL-3.0-only
-"""A faithful port of generate.lua's chunk gate, to check its arithmetic.
+"""A port of generate.lua's chunk gate, to check its arithmetic.
+
+Since the engine's `Density:bounds` landed, the generator reads the terrain
+field's range off the compiled program; this port approximates that bound
+with the old hand-derived formula, so its surface band is a little wider
+than the real one. The depth bands, body and shell logic are exact.
 
 It does NOT evaluate any field — the fields are the engine's density
 programs. It reproduces the BOUNDS the generator computes per chunk and

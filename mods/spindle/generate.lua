@@ -9,10 +9,13 @@
 -- never generate differently — and runs only the fills that can matter.
 --
 -- Two depths drive it. T is the noisy terrain field: where the real surface
--- is, known only to within the relief. D is the smooth depth below the base
--- dome, known exactly. The skin (dirt, the biome's block) follows T; the deep
--- bands (gloam, abyss) follow D, so a chunk two kilometres down pays for no
--- noise at all.
+-- is, known to within the relief — and the engine says how far, exactly:
+-- `Density:bounds` is an interval extension of the program (since engine
+-- 9f01f67), so T's range over a chunk is read off the compiled field rather
+-- than derived by hand here, and cannot drift from it. D is the smooth
+-- depth below the base dome, known exactly. The skin (the soil, the biome's
+-- block) follows T; the deep bands (gloam, abyss) follow D, so a chunk two
+-- kilometres down pays for no noise at all.
 --
 -- **The first fill at a surface gives it its shape**, and sub-node fills
 -- only ADD cells (see shape.lua), so the order is: the whole solid body as
@@ -35,7 +38,7 @@ local DETAIL = shape.SURFACE_DETAIL
 
 local SCALE = shape.SCALE
 local R2_DISC = shape.R_DISC * shape.R_DISC
-local NOISE_BOUND = 0.5           -- the fractal stays within +/-0.42
+local NOISE_BOUND = 0.5           -- the fractal stays within +/-0.42 (the body warp's bound)
 local SAFETY = 0.05               -- km, added to every bound
 local WARP_HI = 1.0 + shape.FLANK_WARP * NOISE_BOUND
 local WARP_LO = 1.0 - shape.FLANK_WARP * NOISE_BOUND
@@ -105,13 +108,11 @@ game.register_on_generate(function(buf, pos)
     -- D, the smooth depth below the base dome: exact bounds.
     local dmax = shape.dome_at(ulo) - Ylo
     local dmin = shape.dome_at(uhi) - Yhi
-    -- T, the real depth: D plus whatever the relief, detail and bluffs can add.
-    local plain = math.max(shape.plain_at(ulo), shape.plain_at(uhi))
-    local relief = plain * NOISE_BOUND * shape.RELIEF_AMP * shape.mask_at(ulo)
-        + NOISE_BOUND * shape.DETAIL_AMP + shape.BLUFF_AMP
-        + shape.GULLY_DEPTH + SAFETY
-    local tmax = dmax + relief
-    local tmin = dmin - relief
+    -- T, the real depth: the engine's bound on the terrain field over this
+    -- chunk. Wrong in one direction only — it may say "maybe" about a chunk
+    -- that turns out to be air, never "air" about one that is not.
+    local t = P.top.solid:bounds(pos)
+    local tmin, tmax = t.low, t.high
 
     -- Bounds on the body: W is non-decreasing in Y.
     local w_hi = shape.half_width_at(Yhi) * WARP_HI + SAFETY
