@@ -48,8 +48,8 @@ local HUMIDITY_FREQ = 1 / 9000
 local LITTER_FREQ = 1 / 14     -- patches a dozen or so blocks across
 local LITTER_MIN = 0.13        -- the noise (+/-0.42) must exceed this: a fifth of the ground
 
-local TREE_CHANCE = 8          -- one grass block in this many is a candidate
-local TREE_SPACING = 4         -- no other trunk within this many blocks
+local TREE_CHANCE = 5          -- one grass block in this many is a candidate
+local TREE_SPACING = 3         -- no other trunk within this many blocks (twice the trees of 4)
 local BIRCH_ONE_IN = 7         -- of the trees, one in this many is a birch
 local DEAD_ONE_IN = 14         -- of the trees, one in this many is dead wood (half standing, half fallen)
 local ROOT_DEPTH = 3           -- how far down a trunk may go looking for whole ground
@@ -85,12 +85,12 @@ local ASPEN = {
 }
 local BIRCH = ASPEN                -- the block is still called birch_log
 
-local ROCK_CHANCE = 350        -- one grass block in this many, inside a patch
+local ROCK_CHANCE = 900        -- one grass block in this many, inside a patch, starts a cluster
 local ROCK_PATCH = 32          -- patches are this many blocks square...
 local ROCK_PATCH_ONE_IN = 4    -- ...and one in this many has rocks and roots
-local ROCK_R_MIN, ROCK_R_EXTRA = 1.0, 1.6   -- half-width, blocks
-local ROCK_BURIED = 0.6        -- share of a rock's height under the grass: half-buried
-local ROOT_SHARE = 5           -- one candidate in this many is a root node, not a rock
+local ROCK_APART = 14          -- no other stone within this many blocks of a new cluster
+local LONE_ONE_IN = 4          -- one cluster candidate in this many is a single boulder
+local ROOT_SHARE = 5           -- one candidate in this many is a root node, not rocks
 
 local POOL_CHANCE = 60000      -- one grass block in this many: very occasional
 local POOL_R = 3               -- radius of the bank, blocks; water is one block down
@@ -603,31 +603,54 @@ end
 
 -- Rocks and root nodes ------------------------------------------------------
 
--- A rock is a point and a squat ellipsoid round it, rounded to the cell and
--- more than half buried: weathered limestone or granite. A root node is the
--- same shape, smaller and flatter, in wood — the exposed knuckle of a root.
--- Both come in patches: a coarse grid of the world, one square in a few, is
--- where they may grow at all.
-local function place_rock(x, y, z, rng, root)
+-- Rocks come from the shared module (rocks.lua): a cluster of weathered
+-- limestone or granite — one big boulder, smaller ones leaning in on one
+-- side, pebbles about — or now and then a single boulder. A root node is a
+-- small flat lump of wood, the exposed knuckle of a root. Both come in
+-- patches: a coarse grid of the world, one square in a few, is where they
+-- may grow at all, and never within ROCK_APART of stone already placed.
+local function stone_near(x, y, z)
+    for _, d in ipairs({ { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 }, { 1, 1 }, { -1, 1 }, { 1, -1 }, { -1, -1 } }) do
+        for _, r in ipairs({ 4, 9, ROCK_APART }) do
+            for dy = -1, 1 do
+                local b = at(x + d[1] * r, y + dy, z + d[2] * r)
+                if b ~= nil and b.occupancy ~= 0
+                    and (b.material == blocks.limestone or b.material == blocks.granite) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+local function place_rocks(x, y, z, rng, root)
     if not edits.room() then
         stats.no_room = stats.no_room + 1
         return false
     end
-    local r = ROCK_R_MIN + rng:below(9) / 8 * ROCK_R_EXTRA
-    local material = rng:next_bool() and "spindle:limestone" or "spindle:granite"
-    local ry = r * (0.5 + rng:below(5) / 10)
     if root then
-        r = 0.7 + rng:below(7) / 10
-        ry = r * 0.5
-        material = "spindle:oak_log"
+        local r = 0.7 + rng:below(7) / 10
+        edits.begin()
+        push_ellipsoid("spindle:oak_log", x + 0.5, y + 0.6 - r * 0.25, z + 0.5, r, r * 0.5, r * (0.8 + rng:below(5) / 10))
+        return edits.commit()
     end
-    local rx = r * (0.8 + rng:below(5) / 10)
-    local rz = r * (0.8 + rng:below(5) / 10)
-    local ground = y + 0.6                       -- about where a partial top block's surface is
-    local cy = ground + ry * (1.0 - 2.0 * ROCK_BURIED)
-    local cx, cz = x + 0.5 + (rng:below(5) - 2) / 4, z + 0.5 + (rng:below(5) - 2) / 4
+    if stone_near(x, y, z) then
+        stats.spacing = stats.spacing + 1
+        return false
+    end
+    local material = rng:next_bool() and "spindle:limestone" or "spindle:granite"
     edits.begin()
-    push_ellipsoid(material, cx, cy, cz, rx, ry, rz)
+    local placed
+    if rng:below(LONE_ONE_IN) == 0 then
+        placed = spindle.rocks.place_cluster(material, x, y, z, rng, { satellites = 0, pebbles = 2 })
+    else
+        placed = spindle.rocks.place_cluster(material, x, y, z, rng)
+    end
+    if placed == 0 then
+        edits.commit()
+        return false
+    end
     return edits.commit()
 end
 
@@ -719,7 +742,7 @@ local function on_grass(x, y, z)
         { x = x // 16, y = y // 16, z = z // 16, seed = spindle.seed or 0 },
         "grow:" .. x .. ":" .. y .. ":" .. z)
     if rock then
-        if place_rock(x, y, z, rng, candidate(x, y, z, ROOT_SHARE)) then
+        if place_rocks(x, y, z, rng, candidate(x, y, z, ROOT_SHARE)) then
             stats.rocks = stats.rocks + 1
         end
         return

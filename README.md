@@ -67,8 +67,12 @@ and names any biome that is registered but not yet built.
   patches over about a third of the ground — detail on hills that were
   otherwise too smooth.
 - **Rocks**: not generated — grown by random tick on grass like the trees,
-  as schematics: a point, a squat ellipsoid round it rounded to the cell,
-  three quarters buried, in patches (one 32-block square in four).
+  from a shared module (`rocks.lua`) any biome can use: clusters of
+  weathered limestone or granite — one big boulder, smaller ones leaning in
+  on one side, pebbles about — or a lone boulder. A boulder is an ellipsoid
+  roughed up block by block and cut flat on a face or two, half buried and
+  merged into the turf. In patches (one 32-block square in four), never
+  within fourteen blocks of stone already placed.
 - **The plain**: a ~3 km-wide ring at the spawn radius where the 12 km
   relief is scaled to a twentieth — the hills, steps and gullies run through
   it at full strength — so the ground is within ~20 blocks of the base dome
