@@ -16,31 +16,40 @@ from pathlib import Path
 SIZE = 16
 OUT = Path(__file__).resolve().parent.parent / "mods" / "spindle" / "textures"
 
-# id -> (r, g, b, grain)
+# id -> (r, g, b, grain). The grain is unused since 2026-09-10 (every texture
+# is one flat colour); the column stays so old entries still parse.
+#
+# **The palette is Lord of the Rings.** Muted, earthy, a little grey in
+# everything: moss greens rather than lime, umber soils, stone the colour of
+# a Rohan hillside rock, water the dark green-blue of a Bree stream. Nothing
+# saturated; the brightest thing in a scene should be light on a birch.
 BLOCKS = {
-    "stone":          (128, 128, 128, 10),
-    "dirt":           (121,  85,  58, 10),
-    "grass":          ( 86, 140,  52, 12),
-    "oak_log":        ( 94,  66,  38,  8),
-    "oak_leaves":     ( 44, 105,  38, 14),
-    "gloam_stone":    ( 72,  78,  96,  8),
-    "abyss_stone":    ( 38,  36,  44,  6),
-    "magma_crust":    (110,  40,  25, 10),
-    "magma":          (255, 120,  20, 20),
-    "lantern_stone":  (220, 180, 110, 12),
-    "caul":           (120, 230, 110, 16),
-    "dream_stone":    (150, 200, 235, 10),
-    "scorch":         ( 70,  45,  30,  8),
-    "marrow":         (235, 228, 210,  8),
-    "apex_stone":     ( 55,  30,  70,  8),
-    "water":          ( 50, 110, 170,  6),
-    "loam":           ( 62,  44,  30, 10),
-    "leaf_litter":    (118,  82,  44, 16),
-    "creek_bed":      ( 96,  92,  84, 14),
-    "limestone":      (188, 178, 150, 10),
-    "granite":        (140, 132, 130, 18),
-    "birch_log":      (214, 208, 196, 14),
-    "dead_wood":      (112, 104,  92, 12),
+    "stone":          (112, 110, 104,  0),
+    "dirt":           ( 98,  78,  58,  0),
+    "grass":          ( 92, 118,  58,  0),
+    "loam":           ( 58,  44,  32,  0),
+    "leaf_litter":    (108,  82,  52,  0),
+    "creek_bed":      ( 96,  94,  88,  0),
+    "limestone":      (176, 168, 146,  0),
+    "granite":        (128, 124, 120,  0),
+    "oak_log":        ( 84,  64,  44,  0),
+    "oak_leaves":     ( 68,  96,  46,  0),
+    "birch_log":      (206, 200, 186,  0),
+    "dead_wood":      (110, 102,  90,  0),
+    "fern":           ( 56,  92,  58,  0),
+    "tall_grass":     (118, 132,  66,  0),
+    "bramble":        ( 72,  60,  44,  0),
+    "water":          ( 58,  92, 110,  0),
+    "gloam_stone":    ( 74,  78,  90,  0),
+    "abyss_stone":    ( 40,  38,  44,  0),
+    "magma_crust":    ( 96,  44,  30,  0),
+    "magma":          (222, 112,  28,  0),
+    "lantern_stone":  (196, 168, 112,  0),
+    "caul":           (112, 176, 104,  0),
+    "dream_stone":    (140, 176, 200,  0),
+    "scorch":         ( 66,  48,  36,  0),
+    "marrow":         (214, 206, 190,  0),
+    "apex_stone":     ( 54,  36,  62,  0),
 }
 
 # Alpha per texture; everything not listed is opaque.

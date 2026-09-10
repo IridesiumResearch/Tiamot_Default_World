@@ -16,6 +16,23 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
+## 6. A passable block (2026-09-10) — OPEN
+
+**Wanted.** Ground cover: ferns two cells tall, tufts of grass, in
+carpets. A player should walk through them.
+
+**Why the mod cannot do it.** Every block collides, whole or partial —
+the contract's collision is the cell lattice, and `register_block` has no
+way to say a material is not an obstacle. Knee-high fern cells are a
+two-thirds lip the player steps up, so a fern carpet is a field of bumps.
+The mod grows ferns in clumps with gaps for now and keeps tufts a cell
+tall.
+
+**Ask.** `register_block{ passable = true }`: the material's cells are
+left out of the collision lattice (and of pathfinding's floor test) and
+otherwise unchanged — drawn, lit, dug, dropped. A player walks through a
+fern; a bramble stays a bramble.
+
 ## 5. Per-cell value jitter on a material (2026-09-10) — OPEN
 
 **Wanted.** Every material is now a single flat colour by design (the

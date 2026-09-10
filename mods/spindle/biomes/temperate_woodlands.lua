@@ -48,6 +48,18 @@ local HUMIDITY_FREQ = 1 / 9000
 local LITTER_FREQ = 1 / 14     -- patches a dozen or so blocks across
 local LITTER_MIN = 0.13        -- the noise (+/-0.42) must exceed this: a fifth of the ground
 
+-- Ground cover, as fills in the shell of air just over the surface: ferns
+-- two cells tall in carpets (a slow noise says where a carpet is, a fast
+-- one breaks it into clumps with gaps to walk through), tufts of grass one
+-- cell tall, sparser, everywhere the ferns are not.
+local COVER_CELL = 0.001 / 3   -- km: one cell
+local FERN_PATCH_FREQ = 1 / 36
+local FERN_PATCH_MIN = 0.0     -- half the ground is fern country
+local FERN_FREQ = 1 / 4
+local FERN_MIN = 0.02          -- within it, a little under half the cells
+local TUFT_FREQ = 1 / 3
+local TUFT_MIN = 0.16          -- one cell in six or so
+
 local TREE_CHANCE = 5          -- one grass block in this many is a candidate
 local TREE_SPACING = 3         -- no other trunk within this many blocks (twice the trees of 4)
 local BIRCH_ONE_IN = 7         -- of the trees, one in this many is a birch
@@ -70,6 +82,7 @@ local OAK = {
     crown = { 2.6, 1.2 },          -- half-width of the clump on the trunk top
     flat = 0.7,                    -- clump height as a share of its width
     flares = { 2, 3 },
+    hollow_one_in = HOLLOW_ONE_IN,  -- a den under the roots, now and then
 }
 local ASPEN = {
     log = "spindle:birch_log", leaves = "spindle:oak_leaves",
@@ -92,9 +105,14 @@ local ROCK_APART = 14          -- no other stone within this many blocks of a ne
 local LONE_ONE_IN = 4          -- one cluster candidate in this many is a single boulder
 local ROOT_SHARE = 5           -- one candidate in this many is a root node, not rocks
 
-local POOL_CHANCE = 60000      -- one grass block in this many: very occasional
-local POOL_R = 3               -- radius of the bank, blocks; water is one block down
-local POOL_APART = 24          -- no other water within this many blocks
+local BRAMBLE_CHANCE = 700     -- one grass block in this many, inside a bramble patch
+local BRAMBLE_PATCH = 24       -- patches this many blocks square, one in BRAMBLE_PATCH_ONE_IN
+local BRAMBLE_PATCH_ONE_IN = 3
+local HOLLOW_ONE_IN = 3        -- one oak in this many has a hollow under its roots
+
+local POOL_CHANCE = 15000      -- one grass block in this many: a vernal pool, tiny
+local POOL_R = 2               -- radius of the bank, blocks; water is one block down
+local POOL_APART = 18          -- no other water within this many blocks
 
 local STATS_EVERY = 200        -- ticks between log lines: ten seconds
 
@@ -123,12 +141,26 @@ spindle.build_biome("temperate_woodlands", function(ctx)
     local litter = shape.compile("biome.woodlands.litter",
         masked(n.min(top(), n.sub(n.noise("litter", LITTER_FREQ, 2, 1.0), n.const(LITTER_MIN)))))
     local creek = shape.compile("biome.woodlands.creek", masked(n.min(top(), shape.gully_floor())))
+    -- The cover: bands of AIR over the surface, so the fills add plant cells
+    -- on top of the ground's own. Ferns first, then tufts where ferns are
+    -- not (the tuft field is cut by the fern patch).
+    local function over(cells)
+        return shape.terrain_band(-COVER_CELL * cells, 0.0, false)
+    end
+    local fern_patch = n.sub(n.noise("fern_patch", FERN_PATCH_FREQ, 1, 1.0), n.const(FERN_PATCH_MIN))
+    local ferns = shape.compile("biome.woodlands.ferns",
+        masked(n.min(n.min(over(2), fern_patch), n.sub(n.noise("fern", FERN_FREQ, 1, 1.0), n.const(FERN_MIN)))))
+    local tufts = shape.compile("biome.woodlands.tufts",
+        masked(n.min(n.min(over(1), n.mul(fern_patch, n.const(-1.0))),
+            n.sub(n.noise("tuft", TUFT_FREQ, 1, 1.0), n.const(TUFT_MIN)))))
     -- In order: turf everywhere, litter over it in patches, gravel over both
-    -- along the creek floors.
+    -- along the creek floors; then the cover over all of it.
     return {
         { field = grass, material = blocks.grass },
         { field = litter, material = blocks.leaf_litter },
         { field = creek, material = blocks.creek_bed },
+        { field = ferns, material = blocks.fern },
+        { field = tufts, material = blocks.tall_grass },
     }
 end)
 spindle.biomes.temperate_woodlands.soil = blocks.loam
@@ -179,7 +211,7 @@ local function candidate(x, y, z, one_in)
 end
 
 -- Counts, for the log.
-local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0,
+local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0, brambles = 0,
     no_room = 0, headroom = 0, spacing = 0, unloaded = 0, errors = 0 }
 local last_error = nil
 
@@ -299,8 +331,15 @@ local function clear_for(x, y, z, height)
     return true
 end
 
--- A root flare: low humps of wood on the ground beside the foot.
-local function push_flares(x, y, z, base, log, count, rng)
+-- The top layer of cells: an arch of root over a hollow.
+local ARCH = bit(0, 2, 0) | bit(1, 2, 0) | bit(2, 2, 0) | bit(0, 2, 1) | bit(1, 2, 1) | bit(2, 2, 1)
+    | bit(0, 2, 2) | bit(1, 2, 2) | bit(2, 2, 2)
+
+-- A root flare: low humps of wood on the ground beside the foot. With
+-- `hollow`, the first of them is instead a natural hollow: the ground
+-- under it is carved out a block or so deep and the root arches over the
+-- opening — a den, the kind of place a fox would take.
+local function push_flares(x, y, z, base, log, count, rng, hollow)
     local dirs = { { 1, 0 }, { -1, 0 }, { 0, 1 }, { 0, -1 } }
     local first = rng:below(4)
     for i = 0, count - 1 do
@@ -309,7 +348,28 @@ local function push_flares(x, y, z, base, log, count, rng)
         for fy = y, base, -1 do
             local b = at(fx, fy, fz)
             if b ~= nil and b.occupancy ~= FULL then
-                edits.push({ x = fx, y = fy, z = fz }, log, LOW, true)
+                if hollow and i == 0 then
+                    -- Carve: an ellipsoid of air, centred a block and a
+                    -- half out and a little below the surface, merged so
+                    -- only its own cells go.
+                    local cx, cy, cz = fx + 0.5 + d[1] * 0.8, fy + 0.2, fz + 0.5 + d[2] * 0.8
+                    for bz = math.floor(cz - 1.3), math.floor(cz + 1.3) do
+                        for by = math.floor(cy - 0.9), math.floor(cy + 0.9) do
+                            for bx = math.floor(cx - 1.3), math.floor(cx + 1.3) do
+                                local mask = ellipsoid_mask(bx, by, bz, cx, cy, cz, 1.3, 0.9, 1.3)
+                                if mask ~= 0 and not (bx == x and bz == z) then
+                                    local g = at(bx, by, bz)
+                                    if g ~= nil and g.occupancy ~= 0 then
+                                        edits.push({ x = bx, y = by, z = bz }, "engine:air", mask & g.occupancy, true)
+                                    end
+                                end
+                            end
+                        end
+                    end
+                    edits.push({ x = fx, y = fy, z = fz }, log, ARCH, true)
+                else
+                    edits.push({ x = fx, y = fy, z = fz }, log, LOW, true)
+                end
                 break
             end
         end
@@ -466,7 +526,8 @@ local function grow_tree(x, y, z, rng, species)
             end
         end
     end
-    push_flares(x, y, z, base, species.log, pick(rng, species.flares), rng)
+    local hollow = species.hollow_one_in ~= nil and rng:below(species.hollow_one_in) == 0
+    push_flares(x, y, z, base, species.log, math.max(pick(rng, species.flares), hollow and 1 or 0), rng, hollow)
     -- Leaves go only where there is air, but reading every leaf block back
     -- is three hundred calls a tree and was most of the mod's tick. Terrain
     -- does not overhang a canopy from above, so one read per COLUMN, at its
@@ -654,12 +715,66 @@ local function place_rocks(x, y, z, rng, root)
     return edits.commit()
 end
 
+-- Brambles ---------------------------------------------------------------------
+
+-- A tangle: over a disc of one to two blocks, each block gets about half
+-- its lower two cell layers and a few cells of the top one, lifted to sit
+-- on the surface within its block. Merged, so the turf's cells stay.
+local function place_bramble(x, y, z, rng)
+    if not edits.room() then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    local radius = 1 + rng:below(2)
+    edits.begin()
+    local placed = 0
+    for dz = -radius, radius do
+        for dx = -radius, radius do
+            if dx * dx + dz * dz <= radius * radius + 1 and rng:below(4) ~= 0 then
+                local gy, gb = spindle.rocks.surface_at(x + dx, z + dz, y)
+                if gy ~= nil then
+                    local ground = gy + (gb.occupancy == FULL and 1.0 or 0.6)
+                    local mask = 0
+                    for cz = 0, 2 do
+                        for cx = 0, 2 do
+                            if rng:below(2) == 0 then mask = mask | bit(cx, 0, cz) end
+                            if rng:below(3) == 0 then mask = mask | bit(cx, 1, cz) end
+                            if rng:below(8) == 0 then mask = mask | bit(cx, 2, cz) end
+                        end
+                    end
+                    -- Lift the tangle to the cell layer above the surface,
+                    -- splitting it across two blocks where it has to.
+                    local by = math.floor(ground)
+                    local layer = math.floor((ground - by) * 3) + 1
+                    if layer > 2 then by, layer = by + 1, 0 end
+                    local low = (mask << (9 * layer)) & FULL
+                    local high = mask >> (9 * (3 - layer))
+                    if low ~= 0 then
+                        edits.push({ x = x + dx, y = by, z = z + dz }, "spindle:bramble", low, true)
+                        placed = placed + 1
+                    end
+                    if high ~= 0 and is_empty(at(x + dx, by + 1, z + dz)) then
+                        edits.push({ x = x + dx, y = by + 1, z = z + dz }, "spindle:bramble", high, true)
+                    end
+                end
+            end
+        end
+    end
+    if placed == 0 then
+        edits.commit()
+        return false
+    end
+    return edits.commit()
+end
+
 -- Pools ----------------------------------------------------------------------
 
--- A pool is dug, not found: a flat patch of grass gets a bank one block deep
--- and a bowl of water under it, two blocks deep at the middle. The bank is
--- what keeps it in — the water sits a block below the grass, walled by whole
--- blocks of ground — so a smooth slope cannot drain it.
+-- A vernal pool is dug, not found: a flat patch of grass gets a bank one
+-- block deep and a shallow bowl of water under it. The bank is what keeps
+-- it in — the water sits a block below the grass, walled by whole blocks —
+-- so a smooth slope cannot drain it. The turf is three blocks thick, so
+-- the bowl's sides are grass and its floor the soil: lined with grass and
+-- mud, without a block being placed for either.
 local function dig_pool(x, y, z)
     for dz = -POOL_R, POOL_R do
         for dx = -POOL_R, POOL_R do
@@ -697,10 +812,6 @@ local function dig_pool(x, y, z)
                 edits.push({ x = x + dx, y = y - 1, z = z + dz }, "engine:air")
                 water[#water + 1] = { x = x + dx, y = y - 1, z = z + dz }
             end
-            if d2 <= 1 then
-                edits.push({ x = x + dx, y = y - 2, z = z + dz }, "engine:air")
-                water[#water + 1] = { x = x + dx, y = y - 2, z = z + dz }
-            end
         end
     end
     if not edits.commit() then
@@ -728,7 +839,9 @@ local function on_grass(x, y, z)
     end
     local rock = candidate(x, y, z, ROCK_CHANCE)
         and candidate(x // ROCK_PATCH, 7, z // ROCK_PATCH, ROCK_PATCH_ONE_IN)
-    if not rock and not candidate(x, y, z, TREE_CHANCE) then
+    local bramble = not rock and candidate(x, y, z, BRAMBLE_CHANCE)
+        and candidate(x // BRAMBLE_PATCH, 11, z // BRAMBLE_PATCH, BRAMBLE_PATCH_ONE_IN)
+    if not rock and not bramble and not candidate(x, y, z, TREE_CHANCE) then
         return
     end
     stats.candidates = stats.candidates + 1
@@ -744,6 +857,12 @@ local function on_grass(x, y, z)
     if rock then
         if place_rocks(x, y, z, rng, candidate(x, y, z, ROOT_SHARE)) then
             stats.rocks = stats.rocks + 1
+        end
+        return
+    end
+    if bramble then
+        if place_bramble(x, y, z, rng) then
+            stats.brambles = stats.brambles + 1
         end
         return
     end
@@ -777,8 +896,8 @@ end)
 
 local function report()
     game.log(string.format(
-        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d pools; refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
-        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.pools,
+        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d pools; refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
+        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.pools,
         stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, last_error or "none",
         edits.waiting()))
     for key in pairs(stats) do

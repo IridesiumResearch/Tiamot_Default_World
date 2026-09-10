@@ -58,6 +58,15 @@ block("granite", "Granite", "Weathered, grey, speckled.", { hardness = 2.0, tint
 block("oak_log", "Oak log", "Trunk of a temperate oak.", { hardness = 1.0, tint = SOIL })
 block("birch_log", "Birch log", "Pale, papery bark.", { hardness = 0.9, tint = ROCK })
 block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = ROCK })
+
+-- Ground cover. Cells, not blocks: a fern is two cell layers of a block, a
+-- tuft of grass one, a bramble a tangle of cells over a few blocks. All of
+-- them collide, as every block does until the engine has a passable flag
+-- (docs/engine-asks.md, item 6); ferns grow in clumps with gaps for that
+-- reason, and brambles are meant to be walked round.
+block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, transparent = true })
+block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, transparent = true })
+block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, transparent = true })
 -- Transparent: a face draws only where one side of it is leaves, so a canopy
 -- is a shell rather than a stack of boxes, and light reaches the ground.
 block("oak_leaves", "Oak leaves", "Canopy of a temperate oak.", { hardness = 0.2, tint = GREEN, transparent = true })
