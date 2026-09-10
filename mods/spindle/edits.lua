@@ -20,7 +20,7 @@
 -- needs, since water written into a block that is still solid is cleared by
 -- the next fluid tick.
 
-local BATCH_EVERY = 6          -- ticks between batches: about three a second
+local BATCH_EVERY = 8          -- ticks between batches: two and a half a second
 local MAX_WAITING = 12         -- batches held; past this, growth is refused until they land
 
 local M = {}
@@ -73,7 +73,7 @@ function M.later(ticks, fn)
     deferred[#deferred + 1] = { ticks = ticks, fn = fn }
 end
 
-game.register_on_tick(function(dt_ticks)
+spindle.on_tick(function(dt_ticks)
     cooldown = cooldown - dt_ticks
     if cooldown <= 0 and head <= tail then
         local batch = batches[head]

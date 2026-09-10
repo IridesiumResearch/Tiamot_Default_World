@@ -153,7 +153,7 @@ game.register_on_player_leave(function(event)
     end
 end)
 
-game.register_on_tick(function(dt_ticks)
+spindle.on_tick(function(dt_ticks)
     tick = tick + dt_ticks
     for uuid, rec in pairs(online) do
         -- A move asked for during the join lands once the body exists.

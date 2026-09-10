@@ -37,7 +37,7 @@ end
 spindle.blocks = load("blocks")
 spindle.shape = load("shape")
 spindle.layers = load("layers")
-load("chat")                    -- one chat hook, many words: spindle.on_chat
+load("hooks")                   -- one tick and one chat hook, many subscribers
 spindle.edits = load("edits")   -- the paced runtime edit queue
 load("biomes")             -- registry: spindle.register_area / register_biome
 load("biomes.catalogue")   -- every area and every biome, as data

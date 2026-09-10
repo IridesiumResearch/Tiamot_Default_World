@@ -297,6 +297,12 @@ local function push_flares(x, y, z, base, log, count, rng)
 end
 
 local function grow_tree(x, y, z, rng, species)
+    -- No room on the queue is the cheapest refusal, so it comes first: a
+    -- canopy is a few thousand cell tests, not worth doing to throw away.
+    if not edits.room() then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
     local height = pick(rng, species.trunk)
     if not clear_for(x, y, z, height) then
         return false
@@ -370,10 +376,6 @@ local function grow_tree(x, y, z, rng, species)
 
     -- One batch: the trunk, the root flare, the wood in the canopy, then the
     -- leaves. Leaves never overwrite anything.
-    if not edits.room() then
-        stats.no_room = stats.no_room + 1
-        return false
-    end
     edits.begin()
     for by = base, top do
         edits.push({ x = x, y = by, z = z }, species.log)
@@ -658,7 +660,7 @@ local function report()
 end
 
 local ticks = 0
-game.register_on_tick(function(dt_ticks)
+spindle.on_tick(function(dt_ticks)
     ticks = ticks + dt_ticks
     if ticks >= STATS_EVERY then
         ticks = 0
