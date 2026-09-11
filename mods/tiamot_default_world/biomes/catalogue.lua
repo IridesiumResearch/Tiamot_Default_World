@@ -5,14 +5,14 @@
 --
 -- This is the designer's list, top to bottom. A biome listed here is
 -- REGISTERED: it has an id, an area, and a first guess at where it goes. It
--- is BUILT only when a file under biomes/ calls `spindle.build_biome` for it
+-- is BUILT only when a file under biomes/ calls `tdw.build_biome` for it
 -- — one at a time, in order, so each one gets looked at on its own.
 --
 -- `ring`, `humidity` and `note` on the surface biomes are placement
 -- proposals, to be argued with when each is built. Humidity is the value of
 -- the slow "humidity" noise, which runs about -0.42 .. +0.42.
 
-local area, biome = spindle.register_area, spindle.register_biome
+local area, biome = tdw.register_area, tdw.register_biome
 
 -- 1. The surface --------------------------------------------------------------
 area{ id = "surface", name = "Surface", kind = "surface",

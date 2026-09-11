@@ -16,7 +16,7 @@ local words = {}
 
 -- Runs `fn(dt_ticks)` every tick, after everything subscribed before it.
 ---@param fn fun(dt_ticks: integer)
-function spindle.on_tick(fn)
+function tdw.on_tick(fn)
     ticks[#ticks + 1] = fn
 end
 
@@ -24,7 +24,7 @@ end
 -- and swallows the message.
 ---@param word string
 ---@param fn fun(player: string)
-function spindle.on_chat(word, fn)
+function tdw.on_chat(word, fn)
     assert(not words[word], "chat word registered twice: " .. word)
     words[word] = fn
 end

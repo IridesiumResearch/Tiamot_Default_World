@@ -86,7 +86,7 @@ function M.later(ticks, fn)
     deferred[#deferred + 1] = { ticks = ticks, fn = fn }
 end
 
-spindle.on_tick(function(dt_ticks)
+tdw.on_tick(function(dt_ticks)
     cooldown = cooldown - dt_ticks
     if cooldown <= 0 and head <= tail then
         local batch = batches[head]

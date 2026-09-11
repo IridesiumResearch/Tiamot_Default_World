@@ -119,6 +119,6 @@ block("scorch", "Scorch", "The hollow ring: dense, hot, dry.", { hardness = 3.5,
 block("marrow", "Marrow", "White porous stone of the tail.", { hardness = 1.2, tint = ROCK })
 block("apex_stone", "Apex stone", "What the needle is made of at the end.", { hardness = 5.0 })
 
-game.log("spindle: registered placeholder blocks")
+game.log("tiamot_default_world: registered placeholder blocks")
 
 return M

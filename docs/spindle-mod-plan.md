@@ -566,7 +566,7 @@ pass over every constant.
 ## Part E — Mod layout
 
 ```toml
-id = "spindle"
+id = "tiamot_default_world"
 name = "Spindle"
 version = "0.1.0"
 depends = ["core >=0.1", "core_sky >=0.1"]

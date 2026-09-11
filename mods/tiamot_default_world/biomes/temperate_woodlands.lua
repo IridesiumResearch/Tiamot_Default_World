@@ -73,7 +73,7 @@ local ROOT_DEPTH = 3           -- how far down a trunk may go looking for whole 
 -- lumpy union of clumps with gaps between them, not one blob. Numbers are
 -- { least, extra } ranges the stream picks from.
 local OAK = {
-    log = "spindle:oak_log", leaves = "spindle:oak_leaves",
+    log = "tiamot_default_world:oak_log", leaves = "tiamot_default_world:oak_leaves",
     trunk = { 6, 4 },              -- blocks of trunk before the crown
     fork_one_in = 4,               -- one oak in this many splits into two leaders
     branches = { 2, 3 },           -- main branches off the upper trunk
@@ -89,7 +89,7 @@ local OAK = {
 -- five short branches stacked up the top half of the trunk, each with a
 -- small clump hugging it, and a crown taller than it is wide.
 local ASPEN = {
-    log = "spindle:birch_log", leaves = "spindle:oak_leaves",
+    log = "tiamot_default_world:birch_log", leaves = "tiamot_default_world:oak_leaves",
     trunk = { 10, 5 },
     fork_one_in = 10,
     branches = { 3, 2 },
@@ -131,12 +131,12 @@ local POOL_APART = 18          -- no other water within this many blocks
 
 local STATS_EVERY = 200        -- ticks between log lines: ten seconds
 
-local blocks = spindle.blocks
-local layers = spindle.layers
-local shape = spindle.shape
-local edits = spindle.edits
+local blocks = tdw.blocks
+local layers = tdw.layers
+local shape = tdw.shape
+local edits = tdw.edits
 
-spindle.build_biome("temperate_woodlands", function(ctx)
+tdw.build_biome("temperate_woodlands", function(ctx)
     local n = ctx.node
     local ring = layers.ring_by_id.temperate
     -- Where the biome is, unless it is everywhere.
@@ -195,7 +195,7 @@ spindle.build_biome("temperate_woodlands", function(ctx)
         { field = tufts, material = blocks.tall_grass },
     }
 end)
-spindle.biomes.temperate_woodlands.soil = blocks.loam
+tdw.biomes.temperate_woodlands.soil = blocks.loam
 
 -- Reading the world ---------------------------------------------------------
 
@@ -226,7 +226,7 @@ end
 -- Whether a grass block at (x, z) is in this biome's ring. Integer
 -- arithmetic on block coordinates; exact.
 local function in_ring(x, z)
-    if spindle.config.everywhere == "temperate_woodlands" then
+    if tdw.config.everywhere == "temperate_woodlands" then
         return true
     end
     local ring = layers.ring_by_id.temperate
@@ -241,7 +241,7 @@ end
 -- of them must cost nothing. Plain integer arithmetic; exact. `seed_int` is
 -- the generator's integer form of the seed — the seed itself can be a float.
 local function hash(x, y, z)
-    local h = (x * 73856093) ~ (y * 19349663) ~ (z * 83492791) ~ ((spindle.seed_int or 0) * 2654435761)
+    local h = (x * 73856093) ~ (y * 19349663) ~ (z * 83492791) ~ ((tdw.seed_int or 0) * 2654435761)
     return h ~ (h >> 17)
 end
 local function candidate(x, y, z, one_in)
@@ -627,7 +627,7 @@ local function grow_snag(x, y, z, rng)
     local top = y + height
     edits.begin()
     for by = base, top - 1 do
-        edits.push({ x = x, y = by, z = z }, "spindle:dead_wood")
+        edits.push({ x = x, y = by, z = z }, "tiamot_default_world:dead_wood")
     end
     -- The broken top: the bottom layer and a few cells above it.
     local jag = 0
@@ -640,7 +640,7 @@ local function grow_snag(x, y, z, rng)
         jag = jag | bit(rng:below(3), 1, rng:below(3))
     end
     jag = jag | bit(rng:below(3), 2, rng:below(3))
-    edits.push({ x = x, y = top, z = z }, "spindle:dead_wood", jag)
+    edits.push({ x = x, y = top, z = z }, "tiamot_default_world:dead_wood", jag)
     -- Stubs: one or two bars out from the upper trunk.
     for _ = 1, 1 + rng:below(2) do
         local dirs = { { 1, 0, "x" }, { -1, 0, "x" }, { 0, 1, "z" }, { 0, -1, "z" } }
@@ -648,10 +648,10 @@ local function grow_snag(x, y, z, rng)
         local sy = top - 1 - rng:below(math.max(1, height - 2))
         local sx, sz = x + d[1], z + d[2]
         if is_empty(at(sx, sy, sz)) then
-            edits.push({ x = sx, y = sy, z = sz }, "spindle:dead_wood", BAR[d[3]])
+            edits.push({ x = sx, y = sy, z = sz }, "tiamot_default_world:dead_wood", BAR[d[3]])
         end
     end
-    push_flares(x, y, z, base, "spindle:dead_wood", rng:below(3), rng)
+    push_flares(x, y, z, base, "tiamot_default_world:dead_wood", rng:below(3), rng)
     if rng:below(MANTLE_BY_DEAD_ONE_IN) == 0 then
         push_mantle(x, y, z, rng)
     end
@@ -696,7 +696,7 @@ local function lay_log(x, y, z, rng)
                 mask = mask & ~(along_x and (bit(2, 0, 0) | bit(2, 1, 0) | bit(2, 0, 1) | bit(2, 1, 1))
                     or (bit(0, 0, 2) | bit(1, 0, 2) | bit(0, 1, 2) | bit(1, 1, 2)))
             end
-            edits.push({ x = lx, y = ly, z = lz }, "spindle:dead_wood", mask, true)
+            edits.push({ x = lx, y = ly, z = lz }, "tiamot_default_world:dead_wood", mask, true)
             placed = placed + 1
         end
     end
@@ -741,20 +741,20 @@ local function place_rocks(x, y, z, rng, root)
     if root then
         local r = 0.7 + rng:below(7) / 10
         edits.begin()
-        push_ellipsoid("spindle:oak_log", x + 0.5, y + 0.6 - r * 0.25, z + 0.5, r, r * 0.5, r * (0.8 + rng:below(5) / 10))
+        push_ellipsoid("tiamot_default_world:oak_log", x + 0.5, y + 0.6 - r * 0.25, z + 0.5, r, r * 0.5, r * (0.8 + rng:below(5) / 10))
         return edits.commit(RESERVE)
     end
     if stone_near(x, y, z) then
         stats.spacing = stats.spacing + 1
         return false
     end
-    local material = rng:next_bool() and "spindle:limestone" or "spindle:granite"
+    local material = rng:next_bool() and "tiamot_default_world:limestone" or "tiamot_default_world:granite"
     edits.begin()
     local placed
     if rng:below(LONE_ONE_IN) == 0 then
-        placed = spindle.rocks.place_cluster(material, x, y, z, rng, { satellites = 0, pebbles = 2 })
+        placed = tdw.rocks.place_cluster(material, x, y, z, rng, { satellites = 0, pebbles = 2 })
     else
-        placed = spindle.rocks.place_cluster(material, x, y, z, rng)
+        placed = tdw.rocks.place_cluster(material, x, y, z, rng)
     end
     if placed == 0 then
         edits.commit(RESERVE)
@@ -779,7 +779,7 @@ local function place_bramble(x, y, z, rng)
     for dz = -radius, radius do
         for dx = -radius, radius do
             if dx * dx + dz * dz <= radius * radius + 1 and rng:below(4) ~= 0 then
-                local gy, gb = spindle.rocks.surface_at(x + dx, z + dz, y)
+                local gy, gb = tdw.rocks.surface_at(x + dx, z + dz, y)
                 if gy ~= nil then
                     local ground = gy + (gb.occupancy == FULL and 1.0 or 0.6)
                     local mask = 0
@@ -798,11 +798,11 @@ local function place_bramble(x, y, z, rng)
                     local low = (mask << (9 * layer)) & FULL
                     local high = mask >> (9 * (3 - layer))
                     if low ~= 0 then
-                        edits.push({ x = x + dx, y = by, z = z + dz }, "spindle:bramble", low, true)
+                        edits.push({ x = x + dx, y = by, z = z + dz }, "tiamot_default_world:bramble", low, true)
                         placed = placed + 1
                     end
                     if high ~= 0 and is_empty(at(x + dx, by + 1, z + dz)) then
-                        edits.push({ x = x + dx, y = by + 1, z = z + dz }, "spindle:bramble", high, true)
+                        edits.push({ x = x + dx, y = by + 1, z = z + dz }, "tiamot_default_world:bramble", high, true)
                     end
                 end
             end
@@ -856,13 +856,13 @@ function push_mantle(x, y, z, rng)
     for dz = -radius, radius do
         for dx = -radius, radius do
             if dx * dx + dz * dz <= radius * radius + 1 and rng:below(5) ~= 0 then
-                local gy, gb = spindle.rocks.surface_at(x + dx, z + dz, y)
+                local gy, gb = tdw.rocks.surface_at(x + dx, z + dz, y)
                 if gy ~= nil and is_open(at(x + dx, gy + 1, z + dz)) then
                     local ground = gy + (gb.occupancy == FULL and 1.0 or 0.6)
-                    if place_column("spindle:ladys_mantle", x + dx, ground, z + dz, 2) then
+                    if place_column("tiamot_default_world:ladys_mantle", x + dx, ground, z + dz, 2) then
                         placed = placed + 1
                         if rng:below(MANTLE_BLOOM_ONE_IN) == 0 and is_open(at(x + dx, gy + 2, z + dz)) then
-                            place_column("spindle:ladys_mantle_bloom", x + dx, ground + 2.0 / 3, z + dz, 2)
+                            place_column("tiamot_default_world:ladys_mantle_bloom", x + dx, ground + 2.0 / 3, z + dz, 2)
                         end
                     end
                 end
@@ -986,7 +986,7 @@ local function dig_pool(x, y, z)
     -- The batch lands within MAX_WAITING * BATCH_EVERY ticks; wait past that.
     edits.later(90, function()
         for _, p in ipairs(water) do
-            game.set_fluid({ x = p.x, y = p.y, z = p.z }, { fluid = "spindle:water", volume = p.volume })
+            game.set_fluid({ x = p.x, y = p.y, z = p.z }, { fluid = "tiamot_default_world:water", volume = p.volume })
         end
     end)
     return true
@@ -1021,7 +1021,7 @@ local function on_grass(x, y, z)
     -- One stream per block, so two grass blocks in one chunk do not grow the
     -- same thing. The world seed is captured by the generator.
     local rng = game.rng_stream(
-        { x = x // 16, y = y // 16, z = z // 16, seed = spindle.seed or 0 },
+        { x = x // 16, y = y // 16, z = z // 16, seed = tdw.seed or 0 },
         "grow:" .. x .. ":" .. y .. ":" .. z)
     if rock then
         if place_rocks(x, y, z, rng, candidate(x, y, z, ROOT_SHARE)) then
@@ -1064,14 +1064,14 @@ game.register_random_tick(blocks.grass, function(event)
         stats.errors = stats.errors + 1
         if last_error ~= tostring(err) then
             last_error = tostring(err)
-            game.log("spindle woodlands: grass tick failed: " .. last_error)
+            game.log("tiamot_default_world woodlands: grass tick failed: " .. last_error)
         end
     end
 end)
 
 local function report()
     game.log(string.format(
-        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d mantle, %d pools of %d tried (%d not flat); refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
+        "tiamot_default_world woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d mantle, %d pools of %d tried (%d not flat); refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
         stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.mantle, stats.pools, stats.pool_tries, stats.pool_slope,
         stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, last_error or "none",
         edits.waiting()))
@@ -1081,7 +1081,7 @@ local function report()
 end
 
 local ticks = 0
-spindle.on_tick(function(dt_ticks)
+tdw.on_tick(function(dt_ticks)
     ticks = ticks + dt_ticks
     if ticks >= STATS_EVERY then
         ticks = 0
@@ -1090,6 +1090,6 @@ spindle.on_tick(function(dt_ticks)
 end)
 
 -- Say "stats" in chat for the counts now, without waiting for the timer.
-spindle.on_chat("stats", report)
+tdw.on_chat("stats", report)
 
-game.log("spindle: woodlands grow oaks, birches, dead wood, rocks, root nodes and pools by random tick")
+game.log("tiamot_default_world: woodlands grow oaks, birches, dead wood, rocks, root nodes and pools by random tick")

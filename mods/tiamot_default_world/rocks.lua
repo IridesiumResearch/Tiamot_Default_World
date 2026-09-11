@@ -17,12 +17,12 @@
 --
 -- Everything is deterministic from the stream the caller passes in. The
 -- caller owns the batch: `place_cluster` and `place_rock` push into the
--- current `spindle.edits` batch and do not begin or commit it.
+-- current `tdw.edits` batch and do not begin or commit it.
 
 local M = {}
-spindle.rocks = M
+tdw.rocks = M
 
-local edits = spindle.edits
+local edits = tdw.edits
 local FULL = game.OCCUPANCY_FULL
 
 local function at(x, y, z)

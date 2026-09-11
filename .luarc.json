@@ -1,5 +1,5 @@
 {
   "runtime.version": "Lua 5.4",
   "workspace.library": ["stubs"],
-  "diagnostics.globals": ["game", "spindle"]
+  "diagnostics.globals": ["game", "tdw"]
 }

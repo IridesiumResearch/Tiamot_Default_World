@@ -23,9 +23,9 @@
 -- from SPAWN_ABOVE finds it — no hopping through unloaded chunks.
 local SPAWN_ABOVE = 30         -- the plain keeps the ground within ~22 of the base dome
 local SPAWN = {
-    x = spindle.shape.SPAWN_X + 0.5,
-    y = spindle.shape.spawn_base_y() + SPAWN_ABOVE,
-    z = spindle.shape.SPAWN_Z + 0.5,
+    x = tdw.shape.SPAWN_X + 0.5,
+    y = tdw.shape.spawn_base_y() + SPAWN_ABOVE,
+    z = tdw.shape.SPAWN_Z + 0.5,
 }
 local SAMPLE_EVERY = 10        -- ticks between position samples
 local SAVE_EVERY = 400         -- ticks between writes to storage
@@ -72,7 +72,7 @@ end
 local function land(uuid, rec)
     rec.landing.ticks = rec.landing.ticks + 1
     if rec.landing.ticks > GIVE_UP_AFTER then
-        game.log("spindle: gave up landing " .. uuid .. " — check the spawn column")
+        game.log("tiamot_default_world: gave up landing " .. uuid .. " — check the spawn column")
         rec.landing = nil
         return
     end
@@ -120,7 +120,7 @@ local function land(uuid, rec)
             if game.move_player(uuid, landed) then
                 rec.landing = nil
                 rec.pos = landed
-                game.log(string.format("spindle: %s landed at %d, %d, %d", uuid, x, y + 1, z))
+                game.log(string.format("tiamot_default_world: %s landed at %d, %d, %d", uuid, x, y + 1, z))
             end
             return
         end
@@ -137,11 +137,11 @@ game.register_on_player_join(function(event)
     if pos then
         rec.pending = pos
         rec.pos = pos
-        game.log(string.format("spindle: %s returns to %s", event.name, saved))
+        game.log(string.format("tiamot_default_world: %s returns to %s", event.name, saved))
     else
         rec.pending = SPAWN
         rec.landing = { ticks = 0 }
-        game.log(string.format("spindle: %s is new here; dropping them at the woodlands", event.name))
+        game.log(string.format("tiamot_default_world: %s is new here; dropping them at the woodlands", event.name))
     end
 end)
 
@@ -153,7 +153,7 @@ game.register_on_player_leave(function(event)
     end
 end)
 
-spindle.on_tick(function(dt_ticks)
+tdw.on_tick(function(dt_ticks)
     tick = tick + dt_ticks
     for uuid, rec in pairs(online) do
         -- A move asked for during the join lands once the body exists.
@@ -178,20 +178,20 @@ end)
 
 -- Say "where" in chat to have the server log where you are, in the
 -- Spindle's own terms. For checking the layers against the plan.
-spindle.on_chat("where", function(player)
+tdw.on_chat("where", function(player)
     local p = where(player)
     if p == nil then
         return
     end
-    local shape = spindle.shape
+    local shape = tdw.shape
     local r2 = (p.x * p.x + p.z * p.z) * 1e-6
     local u = r2 / (shape.R_DISC * shape.R_DISC)
     local Y = (p.y - shape.Y0) * shape.SCALE
-    local ring = spindle.layers.rings_overlapping(u, u)[1]
+    local ring = tdw.layers.rings_overlapping(u, u)[1]
     local depth = shape.dome_at(u) - Y
     game.log(string.format(
-        "spindle where: y=%.0f  Spindle Y=%.2f km  r^2=%.1f km^2 (u=%.4f, ring %s)  ~%.2f km below the base dome",
+        "tiamot_default_world where: y=%.0f  Spindle Y=%.2f km  r^2=%.1f km^2 (u=%.4f, ring %s)  ~%.2f km below the base dome",
         p.y, Y, r2, u, ring and ring.id or "beyond the rim", depth))
 end)
 
-game.log("spindle: player positions are remembered")
+game.log("tiamot_default_world: player positions are remembered")

@@ -29,9 +29,9 @@
 -- Nothing here samples a field. Everything in Lua is a BOUND on a chunk,
 -- computed with + - * / on doubles, which is IEEE-exact everywhere.
 
-local shape = spindle.shape
-local layers = spindle.layers
-local blocks = spindle.blocks
+local shape = tdw.shape
+local layers = tdw.layers
+local blocks = tdw.blocks
 local P = shape.programs
 local AIR = game.AIR
 local DETAIL = shape.SURFACE_DETAIL
@@ -81,14 +81,14 @@ local function seed_int(seed)
 end
 
 game.register_on_generate(function(buf, pos)
-    if spindle.seed ~= pos.seed then
-        spindle.seed = pos.seed
-        spindle.seed_int = seed_int(pos.seed)
+    if tdw.seed ~= pos.seed then
+        tdw.seed = pos.seed
+        tdw.seed_int = seed_int(pos.seed)
     end
     stats.total = stats.total + 1
     if stats.total % LOG_EVERY == 0 then
         game.log(string.format(
-            "spindle chunks: %d total — air %d, hollow %d, filled %d, carved %d (surface %d), shells %d",
+            "tiamot_default_world chunks: %d total — air %d, hollow %d, filled %d, carved %d (surface %d), shells %d",
             stats.total, stats.air, stats.hollow, stats.filled, stats.carved, stats.surface, stats.shells))
     end
 
@@ -150,7 +150,7 @@ game.register_on_generate(function(buf, pos)
     -- surface's shape in one smooth fill.
     local skin = not tail and tmin < shape.SKIN_DIRT
     if skin then
-        base = spindle.surface_soil(ulo, uhi)
+        base = tdw.surface_soil(ulo, uhi)
     end
 
     if inside_body and tmin > 0 then
@@ -177,7 +177,7 @@ game.register_on_generate(function(buf, pos)
         end
         if skin and inside_body and tmin < shape.SKIN_TOP then
             -- The biome's own top.
-            for _, biome in ipairs(spindle.surface_biomes_in(ulo, uhi)) do
+            for _, biome in ipairs(tdw.surface_biomes_in(ulo, uhi)) do
                 for _, fill in ipairs(biome.fills) do
                     buf:fill_density(fill.field, fill.material, DETAIL)
                 end
@@ -203,4 +203,4 @@ game.register_on_generate(function(buf, pos)
     end
 end)
 
-game.log("spindle: registered the generator")
+game.log("tiamot_default_world: registered the generator")

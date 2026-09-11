@@ -1,6 +1,6 @@
 # SPDX-FileCopyrightText: Iridesium
 # SPDX-License-Identifier: GPL-3.0-only
-"""Generates the textures for mods/spindle/textures.
+"""Generates the textures for mods/tiamot_default_world/textures.
 
 One flat colour per block — nothing else, by design: any variation across a
 surface is the renderer's (tint, and per-cell value jitter once the engine
@@ -14,7 +14,7 @@ import zlib
 from pathlib import Path
 
 SIZE = 16
-OUT = Path(__file__).resolve().parent.parent / "mods" / "spindle" / "textures"
+OUT = Path(__file__).resolve().parent.parent / "mods" / "tiamot_default_world" / "textures"
 
 # id -> (r, g, b, grain). The grain is unused since 2026-09-10 (every texture
 # is one flat colour); the column stays so old entries still parse.

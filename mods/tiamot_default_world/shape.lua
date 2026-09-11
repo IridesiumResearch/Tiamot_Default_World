@@ -335,10 +335,10 @@ local function compile(name, spec)
     local ok, field = pcall(game.density, spec)
     if not ok then
         -- The host reports only "errored in init.lua"; say which program and why.
-        game.log(string.format("spindle density %s REFUSED: %s", name, tostring(field)))
+        game.log(string.format("tiamot_default_world density %s REFUSED: %s", name, tostring(field)))
         error(field, 0)
     end
-    game.log(string.format("spindle density %-18s %3d ops", name, field:len()))
+    game.log(string.format("tiamot_default_world density %-18s %3d ops", name, field:len()))
     return field
 end
 M.compile = compile

@@ -12,7 +12,7 @@ shape it, and [`stubs/game.lua`](stubs/game.lua) for the API itself.
 ## Layout
 
 ```
-mods/spindle/            the mod (this is what the engine loads)
+mods/tiamot_default_world/  the mod (this is what the engine loads)
   mod.toml               manifest
   init.lua               load order only
   blocks.lua             one placeholder block per layer
@@ -34,7 +34,7 @@ The engine reads one mods directory (`mods_path`, default `game/`). Point the
 engine at this mod with a directory junction so edits here are live:
 
 ```
-mklink /J <engine>\game\spindle <this repo>\mods\spindle
+mklink /J <engine>\game	iamot_default_world <this repo>\mods	iamot_default_world
 ```
 
 Then, in the launcher, create a world with **Spindle** enabled and
@@ -48,7 +48,7 @@ and every density program the engine refuses:
 cargo run -p server -- --check-mods game
 ```
 
-The check logs the op count of every density program under `spindle density`,
+The check logs the op count of every density program under `tiamot_default_world density`,
 and names any biome that is registered but not yet built.
 
 > The engine's own test suite lists `game/` exhaustively, so leave the junction
@@ -77,7 +77,7 @@ and names any biome that is registered but not yet built.
   relief is scaled to a twentieth — the hills, steps and gullies run through
   it at full strength — so the ground is within ~20 blocks of the base dome
   and a first visit lands in one look.
-- **Dev switch**: `spindle.config.everywhere` in `init.lua` names a built
+- **Dev switch**: `tdw.config.everywhere` in `init.lua` names a built
   biome and puts it over the whole surface, ignoring its ring and humidity,
   so one biome can be looked at on its own. Currently `temperate_woodlands`;
   set it to `nil` for the real world.

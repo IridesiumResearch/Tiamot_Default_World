@@ -9,7 +9,7 @@
 --   tail   - Spindle Y in km, on the needle below the body
 -- and the surface is divided again into RINGS by u = r^2 / R^2.
 
-local shape = spindle.shape
+local shape = tdw.shape
 local M = {}
 
 -- Surface rings, by t = r / R, stored as thresholds on u = t^2 so a ring
