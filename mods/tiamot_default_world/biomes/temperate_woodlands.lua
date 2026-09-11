@@ -250,7 +250,7 @@ end
 
 -- Counts, for the log.
 local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0, pool_tries = 0, pool_slope = 0, brambles = 0, mantle = 0,
-    no_room = 0, headroom = 0, spacing = 0, unloaded = 0, errors = 0 }
+    no_room = 0, headroom = 0, spacing = 0, unloaded = 0, errors = 0, head_by = {} }
 local last_error = nil
 
 -- Declared here and defined with the lady's mantle below, because dead wood
@@ -360,12 +360,19 @@ local function footing(x, y, z)
     return base
 end
 
--- Room for a trunk: air over it, and no other trunk within TREE_SPACING,
+-- Room for a trunk: nothing but ground cover over it (a tuft or a fern is
+-- overwritten, not an obstacle), and no other trunk within TREE_SPACING,
 -- checked on a ring of points at chest height.
 local function clear_for(x, y, z, height)
     for dy = 1, height + 6 do
-        if not is_empty(at(x, y + dy, z)) then
+        local hb = at(x, y + dy, z)
+        if not is_open(hb) then
             stats.headroom = stats.headroom + 1
+            -- What blocked, by numeric material and height: "15@1" is grass
+            -- a block up, which is a tick on turf under the surface (the turf
+            -- is three thick) — most of the count, and no loss.
+            local k = hb == nil and "nil" or (hb.material == nil and "mixed" or tostring(hb.material)) .. "@" .. dy
+            stats.head_by[k] = (stats.head_by[k] or 0) + 1
             return false
         end
     end
@@ -594,7 +601,7 @@ local function grow_tree(x, y, z, rng, species)
             edits.push({ x = bx, y = by, z = bz }, species.log)
         else
             local b = at(bx, by, bz)
-            if is_empty(b) or (bx == x and bz == z) then
+            if is_open(b) or (bx == x and bz == z) then
                 edits.push({ x = bx, y = by, z = bz }, species.log, item.mask == FULL and nil or item.mask, true)
             end
         end
@@ -619,7 +626,7 @@ local function grow_tree(x, y, z, rng, species)
     end
     local clear = {}
     for ck, col in pairs(columns) do
-        clear[ck] = is_empty(at(col.x, col.low, col.z))
+        clear[ck] = is_open(at(col.x, col.low, col.z))
     end
     -- Merged, so a block that holds branch wood takes leaves in the cells
     -- the wood does not — a named cell is taken whatever was in it, so the
@@ -682,7 +689,7 @@ local function grow_snag(x, y, z, rng)
         local d = dirs[rng:below(4) + 1]
         local sy = top - 1 - rng:below(math.max(1, height - 2))
         local sx, sz = x + d[1], z + d[2]
-        if is_empty(at(sx, sy, sz)) then
+        if is_open(at(sx, sy, sz)) then
             edits.push({ x = sx, y = sy, z = sz }, "tiamot_default_world:dead_wood", BAR[d[3]])
         end
     end
@@ -725,7 +732,7 @@ local function lay_log(x, y, z, rng)
                 break
             end
         end
-        if ly == nil and is_empty(at(lx, y, lz)) and is_whole(at(lx, y - 1, lz)) then
+        if ly == nil and is_open(at(lx, y, lz)) and is_whole(at(lx, y - 1, lz)) then
             ly = y
         end
         if ly ~= nil then
@@ -840,7 +847,7 @@ local function place_bramble(x, y, z, rng)
                         edits.push({ x = x + dx, y = by, z = z + dz }, "tiamot_default_world:bramble", low, true)
                         placed = placed + 1
                     end
-                    if high ~= 0 and is_empty(at(x + dx, by + 1, z + dz)) then
+                    if high ~= 0 and is_open(at(x + dx, by + 1, z + dz)) then
                         edits.push({ x = x + dx, y = by + 1, z = z + dz }, "tiamot_default_world:bramble", high, true)
                     end
                 end
@@ -1123,9 +1130,14 @@ local function report()
         stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.mantle, stats.pools, stats.pool_tries, stats.pool_slope,
         stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, last_error or "none",
         edits.waiting()))
+    local parts = {}
+    for k, v in pairs(stats.head_by) do parts[#parts + 1] = k .. "=" .. v end
+    table.sort(parts)
+    game.log("tiamot_default_world woodlands: headroom by material@height: " .. table.concat(parts, " "))
     for key in pairs(stats) do
         stats[key] = 0
     end
+    stats.head_by = {}
 end
 
 local ticks = 0
