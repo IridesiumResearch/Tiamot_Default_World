@@ -164,7 +164,14 @@ built one at a time in its own file. Built so far:
       and long continuous ridges (the zero contours of a noise, so they run
       for hundreds of blocks) with wide shallow hollows, grass over dirt,
       packed dry dirt along winding game trails and on bared ridge crests,
-      and smooth solitary glacial erratics grown by random tick. The two
+      and smooth solitary glacial erratics grown by random tick. Treeless
+      but for the sentinels: very large bonsai in oak — a trunk of rough
+      spheres that leans out, eases back and spirals as it rises, branches
+      that rise and then hold flat pads of leaves out level, a wider pad on
+      top, root flares snaking into the turf — alone on the swells. Burrows
+      tunnelled into hillsides: a wandering tunnel of air with two blocks of
+      roof, a fork in half of them, a squat den, and a second tunnel climbing
+      out the other side (`schem.lua` writes and carves the ellipsoids). The two
       halves of the ring meet on the humidity noise's contour: their terrain
       terms cross-fade over a few hundred blocks and their materials meet on
       a cell-dithered band (`shape.lua`, `tdw.biome_mask`), so there is no
