@@ -99,6 +99,28 @@ M.BLUFF_STEEP = 10.0     -- how sharply the noise is clamped: bigger is steeper
 M.BLUFF_PATCH_FREQ = 1 / 900
 M.BLUFF_PATCH_MIN = 0.08 -- the patch noise (+/-0.42) must exceed this: a third of the ground
 M.BLUFF_PATCH_RAMP = 15.0 -- how quickly a patch fades in past that
+-- The biome blend. One slow "humidity" noise splits a ring into a wet half
+-- and a dry half at HUMIDITY_SPLIT (the temperate ring: woodlands wet,
+-- grasslands dry). The two halves' own terrain terms CROSS-FADE over
+-- HUMIDITY_BLEND of the noise either side of the split, so the ground never
+-- steps at a border; their materials meet on the same contour, dithered at
+-- the cell by a fine noise so the edge is a speckled band rather than a
+-- line. The relief and the detail are the whole world's and need no blend.
+M.HUMIDITY_FREQ = 1 / 9000
+M.HUMIDITY_OCTAVES = 2
+M.HUMIDITY_SPLIT = -0.05  -- the noise runs +/-0.5 after the clamp: the dry half is the smaller
+M.HUMIDITY_BLEND = 0.04   -- in the noise's units: a few hundred blocks of cross-fade
+M.HUMIDITY_DITHER = 0.03  -- +/-, at DITHER_FREQ: the speckle of the material edge
+M.HUMIDITY_DITHER_FREQ = 1 / 10
+-- Rolling grasslands (1.2): broad swells and long ridges. A ridge follows
+-- the zero contour of a noise — a long continuous meandering line — as
+-- RIDGE_AMP * (1 - |n| / RIDGE_WIDTH), clamped: a crest with gentle sides.
+M.SWELL_AMP = 0.008       -- km, x0.5 = +/-4 blocks over SWELL_FREQ
+M.SWELL_FREQ = 1 / 420
+M.SWELL_OCTAVES = 2
+M.RIDGE_AMP = 0.0045      -- km: a ridge stands four or five blocks over the swell
+M.RIDGE_FREQ = 1 / 650
+M.RIDGE_WIDTH = 0.16      -- noise units: about fifty blocks from crest to foot
 -- The plain. Nothing in Lua can evaluate the relief, so the one place a
 -- player has to be put down blind is where the relief is SMALL by
 -- construction: a ring of the disc, centred on the spawn radius and about
@@ -259,11 +281,69 @@ function M.gully_floor()
     return sub(gully_depth(), const(0.6))
 end
 
+-- The humidity noise, +/-0.5.
+function M.humidity()
+    return noise("humidity", M.HUMIDITY_FREQ, M.HUMIDITY_OCTAVES, 1.0)
+end
+
+-- Which half of the split a biome takes, as a mask positive on its side:
+-- the humidity plus the dither against the split, so the two sides are
+-- exact complements and the edge is speckled rather than drawn.
+function M.humidity_mask(wet)
+    local h = add(M.humidity(), noise("biome_dither", M.HUMIDITY_DITHER_FREQ, 1, 2.0 * M.HUMIDITY_DITHER))
+    if wet then
+        return sub(h, const(M.HUMIDITY_SPLIT))
+    end
+    return mul(sub(h, const(M.HUMIDITY_SPLIT)), const(-1.0))
+end
+
+-- The dry side's weight, 0 in the wet half to 1 in the dry, crossing over
+-- HUMIDITY_BLEND either side of the split.
+-- (Noise first, constants after: a constant evaluated first holds a buffer
+-- for everything after it, and the programs run close to the eight.)
+local function dry_weight()
+    return clamp(add(mul(sub(M.humidity(), const(M.HUMIDITY_SPLIT)), const(-0.5 / M.HUMIDITY_BLEND)), const(0.5)),
+        0.0, 1.0)
+end
+
+-- With one biome put everywhere (the dev switch) there is nothing to blend:
+-- that biome's terms whole, the other's not at all.
+local function blend_mode()
+    local only = tdw.config.everywhere
+    if only == nil then
+        return "blend"
+    elseif only == "rolling_grasslands" then
+        return "dry"
+    end
+    return "wet"
+end
+
+-- A grassland ridge: positive along the zero contour of its noise.
+function M.ridge()
+    return mul(clamp(add(mul(abs(noise("ridge", M.RIDGE_FREQ, 1, 1.0)), const(-1.0 / M.RIDGE_WIDTH)), const(1.0)), 0.0, 1.0),
+        const(M.RIDGE_AMP))
+end
+
+local function swells()
+    return add(noise("swell", M.SWELL_FREQ, M.SWELL_OCTAVES, M.SWELL_AMP), M.ridge())
+end
+
+-- The wet half's own terms: the bluffs (when on) and the gullies. A gully
+-- lowers the surface, which is LESS depth at a given height.
+local function wet_terms()
+    local gully = mul(gully_depth(), const(M.GULLY_DEPTH))
+    if M.BLUFF_AMP > 0 then
+        return sub(bluffs(), gully)
+    end
+    return mul(gully, const(-1.0))
+end
+
 -- T: km below the real surface, positive underground. D plus the relief,
--- the detail and the gullies (and the bluffs, when they are on) — a noise
--- node each, every time it is evaluated. `flank` programs run only near the
--- rim and the underside, far from the plain, so they leave it out and keep
--- the ops for the body.
+-- the detail and the biome terms — the wet half's gullies and bluffs, the
+-- dry half's swells and ridges, cross-faded by the dry weight where both
+-- are in play — a noise node each, every time it is evaluated. `flank`
+-- programs run only near the rim and the underside, far from the plain, so
+-- they leave the plain and the blend out and keep the ops for the body.
 function M.terrain(flank)
     local relief = mul(relief_mask(), noise("relief", M.RELIEF_FREQ, M.RELIEF_OCTAVES, M.RELIEF_AMP))
     local detail = noise("detail", M.DETAIL_FREQ, M.DETAIL_OCTAVES, M.DETAIL_AMP)
@@ -271,11 +351,14 @@ function M.terrain(flank)
         relief = mul(relief, plain_mask())
     end
     local shape = add(relief, detail)
-    if M.BLUFF_AMP > 0 then
-        shape = add(shape, bluffs())
+    local mode = flank and "wet" or blend_mode()
+    if mode == "wet" then
+        shape = add(shape, wet_terms())
+    elseif mode == "dry" then
+        shape = add(shape, swells())
+    else
+        shape = add(shape, add(mul(wet_terms(), add(mul(dry_weight(), const(-1.0)), const(1.0))), mul(swells(), dry_weight())))
     end
-    -- A gully lowers the surface, which is LESS depth at a given height.
-    shape = sub(shape, mul(gully_depth(), const(M.GULLY_DEPTH)))
     return add(M.depth(), shape)
 end
 
@@ -284,7 +367,9 @@ end
 -- are ABOVE the ground.
 function M.terrain_band(lo, hi, flank)
     local mid, half = (lo + hi) / 2, (hi - lo) / 2
-    return sub(const(half), abs(sub(M.terrain(flank), const(mid))))
+    -- Written terrain-first: `half - |T - mid|` as `(|T - mid| - half) * -1`,
+    -- one op more and one buffer fewer for the whole of T's evaluation.
+    return mul(sub(abs(sub(M.terrain(flank), const(mid))), const(half)), const(-1.0))
 end
 
 -- W(Y) as a sum of clamped ramps on RAW y, so each segment is seven ops.

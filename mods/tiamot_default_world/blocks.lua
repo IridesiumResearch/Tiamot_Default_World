@@ -27,7 +27,7 @@ local STEP = { step = "core:step" }
 -- half this it read as texture rather than as ground changing across a hill.
 local ROCK = { strength = 0.20, scale = 128 }
 local SOIL = { strength = 0.28, scale = 96 }
-local GREEN = { strength = 0.32, scale = 192, low = { 0.76, 1.0, 0.64 }, high = { 1.0, 0.92, 0.74 } }
+local GREEN = { strength = 0.32, scale = 192, low = { 0.76, 1.0, 0.64 }, high = { 1.0, 0.90, 0.66 } }
 
 local function block(id, name, description, extra)
     local spec = {
@@ -51,6 +51,7 @@ end
 -- Surface ---------------------------------------------------------------
 block("stone", "Stone", "The body of the world.", { hardness = 1.5, tint = ROCK })
 block("dirt", "Dirt", "Ground with no biome claim on it yet.", { hardness = 0.5, tint = SOIL })
+block("packed_dirt", "Packed dry dirt", "A game trail; a bared crest.", { hardness = 0.7, tint = SOIL })
 block("grass", "Grass", "Temperate turf.", { hardness = 0.5, tint = GREEN })
 block("loam", "Loam", "Deep, dark woodland soil.", { hardness = 0.5, tint = SOIL })
 block("leaf_litter", "Leaf litter", "Last year's leaves, packed brown.", { hardness = 0.3, tint = SOIL })

@@ -53,6 +53,14 @@ item 5). A textured material is a decision the designer makes by name.
 
 | `mud` | the floor of a vernal pool, under the water; its walls are whole `grass` | asked for 2026-09-11 |
 
+## 1.2 Rolling Grasslands
+
+Shares `grass`, `dirt` (its soil), `tall_grass` and `granite` (the erratics).
+
+| Block | Where | Why |
+|---|---|---|
+| `packed_dirt` | game trails winding through the grass; bared ridge crests | the biome's one new block, named in the brief |
+
 Nine before the rule, two added under it (both asked for by name). The
 open question is `birch_leaves`: a birch canopy in oak green is wrong up
 close, and the day birch gets its own biome is the day to ask. Candidates for merging when the biome is revisited:

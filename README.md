@@ -159,7 +159,17 @@ built one at a time in its own file. Built so far:
       mud floor so they hold, each filled to its own level a cell or a few
       below the lip (fluid is a volume per block here, so a surface need not
       sit on a block edge). Leaves placed in or against water are refused,
-      and water reaching leaves breaks them (`rules.lua`). The grass tick logs its counts every ten seconds and
+      and water reaching leaves breaks them (`rules.lua`).
+- [x] 1.2 Rolling Grasslands — the dry half of the same ring: broad swells
+      and long continuous ridges (the zero contours of a noise, so they run
+      for hundreds of blocks) with wide shallow hollows, grass over dirt,
+      packed dry dirt along winding game trails and on bared ridge crests,
+      and smooth solitary glacial erratics grown by random tick. The two
+      halves of the ring meet on the humidity noise's contour: their terrain
+      terms cross-fade over a few hundred blocks and their materials meet on
+      a cell-dithered band (`shape.lua`, `tdw.biome_mask`), so there is no
+      step and no line at the border. A grass tick belongs to the biome whose
+      soil is under the turf (`tdw.soil_under`). The grass tick logs its counts every ten seconds and
       on `stats` in chat.
 
 ## Licence

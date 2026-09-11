@@ -42,8 +42,6 @@
 -- every STATS_EVERY ticks it logs how many turns became what. If nothing
 -- grows, that block of the log says why.
 
-local HUMIDITY_MIN = -0.05     -- the noise runs about -0.42 .. +0.42
-local HUMIDITY_FREQ = 1 / 9000
 
 local LITTER_FREQ = 1 / 14     -- patches a dozen or so blocks across
 local LITTER_MIN = 0.13        -- the noise (+/-0.42) must exceed this: a fifth of the ground
@@ -138,21 +136,20 @@ local edits = tdw.edits
 
 tdw.build_biome("temperate_woodlands", function(ctx)
     local n = ctx.node
-    local ring = layers.ring_by_id.temperate
-    -- Where the biome is, unless it is everywhere.
+    -- Where the biome is — the temperate ring's wet half — unless it is
+    -- everywhere.
     local function masked(field)
-        if ctx.everywhere then
-            return field
-        end
-        local humidity = n.noise("humidity", HUMIDITY_FREQ, 2, 1.0)
-        local mask = n.min(shape.ring(ring.u[1], ring.u[2]), n.sub(humidity, n.const(HUMIDITY_MIN)))
-        return n.min(field, mask)
+        local mask = tdw.biome_mask(n, "temperate", true)
+        return mask and n.min(field, mask) or field
     end
     -- The top blocks under the real surface: one terrain evaluation each.
     local function top()
         return shape.terrain_band(0.0, shape.SKIN_TOP, false)
     end
     local grass = shape.compile("biome.woodlands.grass", masked(top()))
+    -- Its own soil under its own grass, where another biome shares the
+    -- chunk (a chunk of woodland alone has loam for its base already).
+    local loam = shape.compile("biome.woodlands.loam", masked(shape.terrain_band(shape.SKIN_TOP, shape.SKIN_DIRT, false)))
     local litter = shape.compile("biome.woodlands.litter",
         masked(n.min(top(), n.sub(n.noise("litter", LITTER_FREQ, 2, 1.0), n.const(LITTER_MIN)))))
     local creek = shape.compile("biome.woodlands.creek", masked(n.min(top(), shape.gully_floor())))
@@ -189,6 +186,7 @@ tdw.build_biome("temperate_woodlands", function(ctx)
     -- along the creek floors; then the cover over all of it.
     return {
         { field = grass, material = blocks.grass },
+        { field = loam, material = blocks.loam, shared_only = true },
         { field = litter, material = blocks.leaf_litter },
         { field = creek, material = blocks.creek_bed },
         { field = ferns, material = blocks.fern },
@@ -1113,8 +1111,15 @@ local function on_grass(x, y, z)
     end
 end
 
-game.register_random_tick(blocks.grass, function(event)
-    local ok, err = pcall(on_grass, event.x, event.y, event.z)
+-- The grass block is shared with the grasslands: a tick is this biome's
+-- when the biome is everywhere, or when loam is under the turf.
+tdw.on_random_tick(blocks.grass, function(x, y, z)
+    local only = tdw.config.everywhere
+    local mine = only == "temperate_woodlands" or (only == nil and tdw.soil_under(x, y, z) == blocks.loam)
+    if not mine then
+        return false
+    end
+    local ok, err = pcall(on_grass, x, y, z)
     if not ok then
         stats.errors = stats.errors + 1
         if last_error ~= tostring(err) then
@@ -1122,6 +1127,7 @@ game.register_random_tick(blocks.grass, function(event)
             game.log("tiamot_default_world woodlands: grass tick failed: " .. last_error)
         end
     end
+    return true
 end)
 
 local function report()

@@ -177,9 +177,12 @@ game.register_on_generate(function(buf, pos)
         end
         if skin and inside_body and tmin < shape.SKIN_TOP then
             -- The biome's own top.
-            for _, biome in ipairs(tdw.surface_biomes_in(ulo, uhi)) do
+            local found = tdw.surface_biomes_in(ulo, uhi)
+            for _, biome in ipairs(found) do
                 for _, fill in ipairs(biome.fills) do
-                    buf:fill_density(fill.field, fill.material, DETAIL)
+                    if not fill.shared_only or #found > 1 then
+                        buf:fill_density(fill.field, fill.material, DETAIL)
+                    end
                 end
             end
         end

@@ -80,6 +80,40 @@ function tdw.build_biome(id, build)
     game.log(string.format("tiamot_default_world biome %-24s built, %d fill(s)", id, #biome.fills))
 end
 
+-- A surface biome's placement mask for its fills: its ring, and its side
+-- of the humidity split. Nil when a biome is put everywhere (nothing to
+-- mask), so a builder does `field = mask and n.min(field, mask) or field`.
+---@param n table The node builders (ctx.node).
+---@param ring_id string
+---@param wet boolean Which side of the split.
+function tdw.biome_mask(n, ring_id, wet)
+    if tdw.config.everywhere then
+        return nil
+    end
+    local ring = tdw.layers.ring_by_id[ring_id]
+    return n.min(tdw.shape.ring(ring.u[1], ring.u[2]), tdw.shape.humidity_mask(wet))
+end
+
+-- Which biome a grass block belongs to, at runtime, from what is under the
+-- turf: the first block below that is not grass. Woodlands sit on loam,
+-- grasslands on dirt, and each biome lays its own soil under its own grass,
+-- so this is exact even in a chunk where the two meet. Nil when the column
+-- is unloaded or the block under the turf is mixed.
+---@return integer? material
+function tdw.soil_under(x, y, z)
+    local grass = tdw.blocks.grass
+    for dy = 1, 5 do
+        local b = game.get_block{ x = x, y = y - dy, z = z }
+        if b == nil then
+            return nil
+        end
+        if b.material ~= grass then
+            return b.material
+        end
+    end
+    return nil
+end
+
 function tdw.built_count()
     local n = 0
     for _, biome in ipairs(tdw.biome_list) do

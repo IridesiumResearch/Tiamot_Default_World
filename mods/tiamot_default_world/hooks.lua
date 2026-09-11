@@ -29,6 +29,28 @@ function tdw.on_chat(word, fn)
     words[word] = fn
 end
 
+-- Runs `fn(x, y, z)` when a block of `material` gets a random tick, until
+-- one subscriber returns true — two biomes share the grass block, and each
+-- takes only the ticks on its own ground.
+local random_ticks = {}
+---@param material integer
+---@param fn fun(x: integer, y: integer, z: integer): boolean?
+function tdw.on_random_tick(material, fn)
+    local list = random_ticks[material]
+    if list == nil then
+        list = {}
+        random_ticks[material] = list
+        game.register_random_tick(material, function(event)
+            for _, f in ipairs(list) do
+                if f(event.x, event.y, event.z) then
+                    return
+                end
+            end
+        end)
+    end
+    list[#list + 1] = fn
+end
+
 game.register_on_tick(function(dt_ticks)
     for _, fn in ipairs(ticks) do
         fn(dt_ticks)

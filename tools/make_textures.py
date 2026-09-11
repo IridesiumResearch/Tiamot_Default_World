@@ -26,6 +26,7 @@ OUT = Path(__file__).resolve().parent.parent / "mods" / "tiamot_default_world" /
 BLOCKS = {
     "stone":          (112, 110, 104,  0),
     "dirt":           ( 98,  78,  58,  0),
+    "packed_dirt":    (124, 102,  72,  0),
     "grass":          ( 88, 122,  52,  0),
     "loam":           ( 58,  44,  32,  0),
     "leaf_litter":    (108,  82,  52,  0),

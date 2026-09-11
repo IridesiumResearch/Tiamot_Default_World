@@ -16,6 +16,30 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
+## 12. Bounds of a noise node over a box (2026-09-11)
+
+**Wanted.** Two biomes share the temperate ring, split by a slow humidity
+noise (period nine kilometres). A chunk is almost always wholly on one
+side, but the generator cannot tell, so BOTH biomes' fills run in every
+chunk of the ring — ten programs of two hundred ops instead of five, and
+the probe went from no over-budget ticks to hundreds a minute in the
+blended world.
+
+**Why the mod cannot do it.** `Density:bounds(pos)` is the tool for this,
+but its interval for a noise node is the node's whole range whatever the
+box (the mod clamps every noise to +/-0.5 of its amplitude for exactly
+that reason), so a humidity program's bounds over a chunk are always
+"either side". There is no Lua-callable noise and no `Map:get`, and a
+per-sample evaluation in Lua would break charter rule 4 anyway.
+
+**Ask.** In the interval extension, bound a noise node over a box by its
+value at the box's centre plus a Lipschitz term — `amplitude * K *
+frequency * half_diagonal` per octave, with K the gradient bound of the
+noise basis — so a slow noise over a sixteen-block chunk bounds to a sliver
+rather than its whole range. Nothing else changes: `bounds` keeps its
+signature, programs that never needed it keep passing, and the generator
+can skip a biome whose humidity band a chunk's interval misses.
+
 ## 11. An item dropped at a position (2026-09-11)
 
 **Wanted.** Water reaching a leaves block breaks it (`rules.lua`, on

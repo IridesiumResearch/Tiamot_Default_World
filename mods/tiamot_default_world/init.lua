@@ -20,7 +20,7 @@ tdw = {}
 -- over the WHOLE surface, ignoring its ring and humidity, so one biome can be
 -- looked at on its own while it is being made. Set it to nil for the world.
 tdw.config = {
-    everywhere = "temperate_woodlands",
+    everywhere = "rolling_grasslands",
 }
 
 -- The host reports a failed load as "errored in init.lua" and nothing more,
@@ -43,6 +43,7 @@ load("rocks")                   -- boulders and clusters, for any biome: tdw.roc
 load("biomes")             -- registry: tdw.register_area / register_biome
 load("biomes.catalogue")   -- every area and every biome, as data
 load("biomes.temperate_woodlands")   -- 1.1, the first one built
+load("biomes.rolling_grasslands")    -- 1.2, the dry half of the same ring
 load("generate")
 load("player")
 load("rules")             -- leaves and water, and other rules of the whole world
