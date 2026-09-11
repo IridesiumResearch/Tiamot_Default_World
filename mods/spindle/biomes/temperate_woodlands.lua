@@ -58,13 +58,13 @@ local FERN_PATCH_MIN = 0.0     -- half the ground is fern country
 local FERN_FREQ = 1 / 4
 local FERN_MIN = 0.02          -- within it, a little under half the cells
 local TUFT_FREQ = 1 / 3
-local TUFT_MIN = 0.04          -- a little under half the cell columns of a covered block
-local TUFT_HEIGHT_FREQ = 1 / 2 -- a fine noise: how many cells tall each column's tuft is, one to three
+local TUFT_MIN = 0.15          -- two or three of a block's nine cell columns, in clumps
+local TUFT_HEIGHT_FREQ = 1 / 2 -- a fine noise: how many cells tall each column's tuft is, two or three
 
 local TREE_CHANCE = 5          -- one grass block in this many is a candidate
 local TREE_SPACING = 3         -- no other trunk within this many blocks (twice the trees of 4)
 local BIRCH_ONE_IN = 7         -- of the trees, one in this many is a birch
-local DEAD_ONE_IN = 14         -- of the trees, one in this many is dead wood (half standing, half fallen)
+local DEAD_ONE_IN = 42         -- of the trees, one in this many is dead wood (half standing, half fallen)
 local ROOT_DEPTH = 3           -- how far down a trunk may go looking for whole ground
 
 -- Species, in the Better Trees idiom: a trunk that may fork, a few main
@@ -121,7 +121,7 @@ local BRAMBLE_PATCH = 24       -- patches this many blocks square, one in BRAMBL
 local BRAMBLE_PATCH_ONE_IN = 3
 local HOLLOW_ONE_IN = 3        -- one oak in this many has a hollow under its roots
 
-local POOL_CHANCE = 15000      -- one grass block in this many: a vernal pool, tiny
+local POOL_CHANCE = 2500       -- one grass block in this many: a vernal pool, tiny
 local POOL_R = 2               -- radius of the bank, blocks; water is one block down
 local POOL_APART = 18          -- no other water within this many blocks
 
@@ -162,14 +162,19 @@ spindle.build_biome("temperate_woodlands", function(ctx)
     local ferns = shape.compile("biome.woodlands.ferns",
         masked(n.min(n.min(over(2), fern_patch), n.sub(n.noise("fern", FERN_FREQ, 1, 1.0), n.const(FERN_MIN)))))
     -- Tufts: placed per cell so they stand on the surface wherever it is,
-    -- with a height of one to three cells that a fine noise picks per
-    -- column, and about four or five of a block's nine columns taken.
+    -- two or three cells tall as a fine noise picks per column, and two or
+    -- three of a block's nine columns taken, in clumps. The engine draws a
+    -- run of billboard cells as ONE square sprite as tall as the run, the
+    -- whole tile across it, so a two-cell run is a card two thirds of a
+    -- block each way and a three-cell run a block — Minecraft's grass,
+    -- standing on the sub-node surface rather than floating over a block.
     -- `a` is height above the ground in km; a column's tuft reaches
-    -- 3 cells * (0.5 + h), h in +/-0.42, so one to nearly three cells.
-    -- 0 < a < R as (R/2) - |a - R/2|: the terrain once, the cheap reach
-    -- term twice, rather than the terrain twice (which is over the op limit).
+    -- 3 cells * (0.8 + 0.6 h), h in +/-0.5, so 1.5 to 3.3 cells: two or
+    -- three. 0 < a < R as (R/2) - |a - R/2|: the terrain once, the cheap
+    -- reach term twice, rather than the terrain twice (over the op limit).
     local function reach_half()
-        return n.mul(n.add(n.noise("tuft_height", TUFT_HEIGHT_FREQ, 1, 1.0), n.const(0.5)), n.const(COVER_CELL * 1.5))
+        return n.mul(n.add(n.mul(n.noise("tuft_height", TUFT_HEIGHT_FREQ, 1, 1.0), n.const(0.6)), n.const(0.8)),
+            n.const(COVER_CELL * 1.5))
     end
     local above = n.mul(shape.terrain(false), n.const(-1.0))
     local tuft_band = n.sub(reach_half(), n.abs(n.sub(above, reach_half())))
@@ -207,6 +212,12 @@ local function is_wood(b)
     return b ~= nil and b.occupancy ~= 0
         and (b.material == blocks.oak_log or b.material == blocks.birch_log or b.material == blocks.dead_wood)
 end
+-- Nothing there but ground cover, which a pool or a plant may take over.
+local function is_open(b)
+    return b ~= nil and (b.occupancy == 0
+        or b.material == blocks.tall_grass or b.material == blocks.fern
+        or b.material == blocks.ladys_mantle or b.material == blocks.ladys_mantle_bloom)
+end
 
 -- Whether a grass block at (x, z) is in this biome's ring. Integer
 -- arithmetic on block coordinates; exact.
@@ -234,7 +245,7 @@ local function candidate(x, y, z, one_in)
 end
 
 -- Counts, for the log.
-local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0, brambles = 0, mantle = 0,
+local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0, pool_slope = 0, brambles = 0, mantle = 0,
     no_room = 0, headroom = 0, spacing = 0, unloaded = 0, errors = 0 }
 local last_error = nil
 
@@ -823,7 +834,7 @@ local function place_column(material, x, ground, z, layers)
             placed = true
         end
     end
-    if high ~= 0 and is_empty(at(x, by + 1, z)) then
+    if high ~= 0 and is_open(at(x, by + 1, z)) then
         edits.push({ x = x, y = by + 1, z = z }, material, high, true)
         placed = true
     end
@@ -831,8 +842,10 @@ local function place_column(material, x, ground, z, layers)
 end
 
 -- A patch of lady's mantle round (x, z): rosettes on most columns of a
--- small disc, a bloom rising over one column in a few. Pushes into the
--- current batch.
+-- small disc, two cells tall so each is a card two thirds of a block; a
+-- bloom the same height rising from the top of a rosette over one column
+-- in a few (a different billboard material starts its own sprite, so the
+-- spray stands over the leaves). Pushes into the current batch.
 function push_mantle(x, y, z, rng)
     local radius = pick(rng, MANTLE_R)
     local placed = 0
@@ -840,12 +853,12 @@ function push_mantle(x, y, z, rng)
         for dx = -radius, radius do
             if dx * dx + dz * dz <= radius * radius + 1 and rng:below(5) ~= 0 then
                 local gy, gb = spindle.rocks.surface_at(x + dx, z + dz, y)
-                if gy ~= nil and is_empty(at(x + dx, gy + 1, z + dz)) then
+                if gy ~= nil and is_open(at(x + dx, gy + 1, z + dz)) then
                     local ground = gy + (gb.occupancy == FULL and 1.0 or 0.6)
-                    if place_column("spindle:ladys_mantle", x + dx, ground, z + dz, 1) then
+                    if place_column("spindle:ladys_mantle", x + dx, ground, z + dz, 2) then
                         placed = placed + 1
-                        if rng:below(MANTLE_BLOOM_ONE_IN) == 0 then
-                            place_column("spindle:ladys_mantle_bloom", x + dx, ground + 1.0 / 3, z + dz, 1)
+                        if rng:below(MANTLE_BLOOM_ONE_IN) == 0 and is_open(at(x + dx, gy + 2, z + dz)) then
+                            place_column("spindle:ladys_mantle_bloom", x + dx, ground + 2.0 / 3, z + dz, 2)
                         end
                     end
                 end
@@ -881,7 +894,8 @@ local function dig_pool(x, y, z)
         for dx = -POOL_R, POOL_R do
             if dx * dx + dz * dz <= POOL_R * POOL_R then
                 local ground, above, under = at(x + dx, y, z + dz), at(x + dx, y + 1, z + dz), at(x + dx, y - 1, z + dz)
-                if ground == nil or ground.occupancy == 0 or not is_empty(above) or not is_whole(under) then
+                if ground == nil or ground.occupancy == 0 or not is_open(above) or not is_whole(under) then
+                    stats.pool_slope = stats.pool_slope + 1
                     return false
                 end
             end
@@ -1005,8 +1019,8 @@ end)
 
 local function report()
     game.log(string.format(
-        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d mantle, %d pools; refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
-        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.mantle, stats.pools,
+        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d mantle, %d pools (%d not flat); refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
+        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.mantle, stats.pools, stats.pool_slope,
         stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, last_error or "none",
         edits.waiting()))
     for key in pairs(stats) do

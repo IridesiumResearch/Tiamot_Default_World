@@ -45,11 +45,11 @@ item 5). A textured material is a decision the designer makes by name.
 | `granite` | half-buried rocks | |
 | `birch_log` | aspens scattered through the woodland; their own biome's later | asked for 2026-09-09; canopies reuse `oak_leaves` for now |
 | `dead_wood` | standing snags and fallen trunks | asked for 2026-09-09 |
-| `fern` | knee-high carpets, two cells tall, in clumps | asked for 2026-09-10; for reuse |
-| `tall_grass` | tufts one cell tall, where the ferns are not | asked for 2026-09-10; for reuse |
+| `fern` | knee-high carpets, two cells tall, in clumps; blocky fronds | asked for 2026-09-10; for reuse |
+| `tall_grass` | tufts two or three cells tall, where the ferns are not; a sprite as tall as the run | asked for 2026-09-10; for reuse |
 | `bramble` | wild berry tangles, walked round | asked for 2026-09-10; for reuse |
-| `ladys_mantle` | rosettes in patches, thicker round dead wood; billboard, sways | asked for 2026-09-10; for reuse |
-| `ladys_mantle_bloom` | chartreuse sprays over a mantle leaf; its own single colour | asked for 2026-09-10; for reuse |
+| `ladys_mantle` | rosettes two cells tall in patches, thicker round dead wood; billboard, sways | asked for 2026-09-10; for reuse |
+| `ladys_mantle_bloom` | chartreuse sprays two cells tall rising from a rosette; its own single colour | asked for 2026-09-10; for reuse |
 
 The vernal pools' "mud" is `loam`: the turf is three blocks thick and a
 pool's bowl is dug through it, so its sides are grass and its floor soil

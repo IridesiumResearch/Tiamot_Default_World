@@ -78,8 +78,20 @@ CELL_EDGES = [0, 5, 11, 16]     # the three cells across a 16-pixel face
 # name -> (radius in pixels, radius jitter, centre jitter)
 DOTS = {
     "oak_leaves": (2.6, 0.4, 0.6),
-    "fern":       (2.2, 0.4, 0.8),
 }
+
+# Ferns as blocky FRONDS rather than dots (dots read as leaves, 2026-09-10):
+# one small feather per sub-node face — a stem with leaflets either side,
+# tapering to the tip — turned a random quarter per cell so a carpet of
+# them fans every way. Still crisp and blocky; binary alpha.
+FROND = [
+    "..#..",
+    ".###.",
+    "..#..",
+    "#####",
+    "..#..",
+]
+FRONDS = {"fern"}
 
 # Grass as a SPRITE: blades, for the engine's card drawing mode (asks, item
 # 8) — a few tapering strokes from the bottom edge, binary alpha. Drawn as
@@ -168,6 +180,22 @@ def texture(name, r, g, b, grain):
                     for oy in (0, 1):
                         if 0 <= px + ox < SIZE and 0 <= py + oy < SIZE:
                             on[py + oy][px + ox] = True
+        rows = [[v for x in range(SIZE) for v in (r, g, b, 255 if on[y][x] else 0)] for y in range(SIZE)]
+        return png(SIZE, SIZE, rows)
+    if name in FRONDS:
+        rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)) + 13)
+        on = [[False] * SIZE for _ in range(SIZE)]
+        for cy in range(3):
+            for cx in range(3):
+                turns = next(rng) % 4
+                pattern = [list(row) for row in FROND]
+                for _ in range(turns):
+                    pattern = [list(row) for row in zip(*pattern[::-1])]
+                x0, y0 = CELL_EDGES[cx], CELL_EDGES[cy]
+                for py, row in enumerate(pattern):
+                    for px, v in enumerate(row):
+                        if v == "#" and x0 + px < SIZE and y0 + py < SIZE:
+                            on[y0 + py][x0 + px] = True
         rows = [[v for x in range(SIZE) for v in (r, g, b, 255 if on[y][x] else 0)] for y in range(SIZE)]
         return png(SIZE, SIZE, rows)
     blades = BLADES.get(name)

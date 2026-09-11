@@ -23,9 +23,11 @@ local M = {}
 local STEP = { step = "core:step" }
 
 -- Tone-only variation for rock; a hue shift for anything that grows.
-local ROCK = { strength = 0.10, scale = 64 }
-local SOIL = { strength = 0.14, scale = 48 }
-local GREEN = { strength = 0.16, scale = 96, low = { 0.82, 1.0, 0.72 }, high = { 1.0, 0.94, 0.80 } }
+-- Doubled in both period and strength on 2026-09-10, from the window: at
+-- half this it read as texture rather than as ground changing across a hill.
+local ROCK = { strength = 0.20, scale = 128 }
+local SOIL = { strength = 0.28, scale = 96 }
+local GREEN = { strength = 0.32, scale = 192, low = { 0.82, 1.0, 0.72 }, high = { 1.0, 0.94, 0.80 } }
 
 local function block(id, name, description, extra)
     local spec = {

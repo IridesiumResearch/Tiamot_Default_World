@@ -143,17 +143,19 @@ built one at a time in its own file. Built so far:
 
 - [x] 1.1 Temperate Woodlands — turf over dark loam on the temperate ring's
       wetter half, patches of leaf litter, wet gravel along the creek beds;
-      fern carpets two cells tall in clumps and tufts of grass one cell tall
-      over all of it (fills, so they are there the moment a chunk is).
+      fern carpets two cells tall in clumps and tufts of grass two or three
+      cells tall over all of it, each tuft one camera-facing sprite standing
+      on the sub-node surface (fills, so they are there the moment a chunk
+      is).
       Grown by random tick on grass, each structure one merged batch: oaks
       and aspens in the Better Trees idiom (rounded trunks, a fork in one
       oak in four, branches that each carry a ragged clump of leaves, a
-      crown on top), dead wood one tree in fourteen (snags with a broken
+      crown on top), dead wood one tree in forty-two (snags with a broken
       top, fallen trunks sunk into the turf), rock clusters of weathered
       limestone or granite from the shared `rocks.lua`, woody root nodes,
-      bramble tangles in patches, a hollow dug under the roots of one oak in
-      three with the root arching over it, and tiny vernal pools, grass-sided
-      and soil-floored. The grass tick logs its counts every ten seconds and
+      bramble tangles in patches, lady's mantle in patches and round dead
+      wood, a hollow dug under the roots of one oak in three with the root
+      arching over it, and tiny vernal pools, grass-sided and soil-floored. The grass tick logs its counts every ten seconds and
       on `stats` in chat.
 
 ## Licence
