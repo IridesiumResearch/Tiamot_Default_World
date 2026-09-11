@@ -53,13 +53,17 @@ end
 
 -- Queues the batch. Returns false, with nothing queued, if too many are
 -- waiting: the caller should not have done the work, so `M.room()` first.
-function M.commit()
+-- `reserve` lets a caller queue past the cap by that many batches: a rare
+-- structure (a pool, a rock cluster) would otherwise never find room in a
+-- queue that the common one (a tree) keeps full.
+---@param reserve integer?
+function M.commit(reserve)
     local batch = current
     current = nil
     if not batch or #batch == 0 then
         return true
     end
-    if M.waiting() >= MAX_WAITING then
+    if M.waiting() >= MAX_WAITING + (reserve or 0) then
         return false
     end
     tail = tail + 1
@@ -67,8 +71,9 @@ function M.commit()
     return true
 end
 
-function M.room()
-    return M.waiting() < MAX_WAITING
+---@param reserve integer?
+function M.room(reserve)
+    return M.waiting() < MAX_WAITING + (reserve or 0)
 end
 
 function M.waiting()

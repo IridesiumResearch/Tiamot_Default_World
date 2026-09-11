@@ -121,7 +121,11 @@ local BRAMBLE_PATCH = 24       -- patches this many blocks square, one in BRAMBL
 local BRAMBLE_PATCH_ONE_IN = 3
 local HOLLOW_ONE_IN = 3        -- one oak in this many has a hollow under its roots
 
-local POOL_CHANCE = 2500       -- one grass block in this many: a vernal pool, tiny
+-- Trees are tried so often they keep the edit queue full; anything rarer
+-- may queue this many batches past its cap, or it would never be placed.
+local RESERVE = 6
+
+local POOL_CHANCE = 1200       -- one grass block in this many: a vernal pool, tiny
 local POOL_R = 2               -- radius of the bank, blocks; water is one block down
 local POOL_APART = 18          -- no other water within this many blocks
 
@@ -245,7 +249,7 @@ local function candidate(x, y, z, one_in)
 end
 
 -- Counts, for the log.
-local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0, pool_slope = 0, brambles = 0, mantle = 0,
+local stats = { turns = 0, candidates = 0, attempts = 0, grown = 0, rocks = 0, pools = 0, pool_tries = 0, pool_slope = 0, brambles = 0, mantle = 0,
     no_room = 0, headroom = 0, spacing = 0, unloaded = 0, errors = 0 }
 local last_error = nil
 
@@ -730,7 +734,7 @@ local function stone_near(x, y, z)
 end
 
 local function place_rocks(x, y, z, rng, root)
-    if not edits.room() then
+    if not edits.room(RESERVE) then
         stats.no_room = stats.no_room + 1
         return false
     end
@@ -738,7 +742,7 @@ local function place_rocks(x, y, z, rng, root)
         local r = 0.7 + rng:below(7) / 10
         edits.begin()
         push_ellipsoid("spindle:oak_log", x + 0.5, y + 0.6 - r * 0.25, z + 0.5, r, r * 0.5, r * (0.8 + rng:below(5) / 10))
-        return edits.commit()
+        return edits.commit(RESERVE)
     end
     if stone_near(x, y, z) then
         stats.spacing = stats.spacing + 1
@@ -753,10 +757,10 @@ local function place_rocks(x, y, z, rng, root)
         placed = spindle.rocks.place_cluster(material, x, y, z, rng)
     end
     if placed == 0 then
-        edits.commit()
+        edits.commit(RESERVE)
         return false
     end
-    return edits.commit()
+    return edits.commit(RESERVE)
 end
 
 -- Brambles ---------------------------------------------------------------------
@@ -765,7 +769,7 @@ end
 -- its lower two cell layers and a few cells of the top one, lifted to sit
 -- on the surface within its block. Merged, so the turf's cells stay.
 local function place_bramble(x, y, z, rng)
-    if not edits.room() then
+    if not edits.room(RESERVE) then
         stats.no_room = stats.no_room + 1
         return false
     end
@@ -805,10 +809,10 @@ local function place_bramble(x, y, z, rng)
         end
     end
     if placed == 0 then
-        edits.commit()
+        edits.commit(RESERVE)
         return false
     end
-    return edits.commit()
+    return edits.commit(RESERVE)
 end
 
 -- Lady's mantle ------------------------------------------------------------------
@@ -869,16 +873,16 @@ function push_mantle(x, y, z, rng)
 end
 
 local function place_mantle(x, y, z, rng)
-    if not edits.room() then
+    if not edits.room(RESERVE) then
         stats.no_room = stats.no_room + 1
         return false
     end
     edits.begin()
     if push_mantle(x, y, z, rng) == 0 then
-        edits.commit()
+        edits.commit(RESERVE)
         return false
     end
-    return edits.commit()
+    return edits.commit(RESERVE)
 end
 
 -- Pools ----------------------------------------------------------------------
@@ -889,12 +893,36 @@ end
 -- so a smooth slope cannot drain it. The turf is three blocks thick, so
 -- the bowl's sides are grass and its floor the soil: lined with grass and
 -- mud, without a block being placed for either.
+--
+-- The tick may land on a grass block a block or two under the surface
+-- (the turf is three thick), so a try climbs to the top of the turf
+-- first. "Flat" allows a column of the rim to be one block HIGHER — the
+-- bank is dug a block deeper there, so a pool sits in a gentle slope
+-- rather than only on the rare dead-level patch.
 local function dig_pool(x, y, z)
+    for _ = 1, 3 do
+        local up = at(x, y + 1, z)
+        if up == nil or up.occupancy == 0 or up.material ~= blocks.grass then break end
+        y = y + 1
+    end
+    local extra = {}
     for dz = -POOL_R, POOL_R do
         for dx = -POOL_R, POOL_R do
-            if dx * dx + dz * dz <= POOL_R * POOL_R then
-                local ground, above, under = at(x + dx, y, z + dz), at(x + dx, y + 1, z + dz), at(x + dx, y - 1, z + dz)
-                if ground == nil or ground.occupancy == 0 or not is_open(above) or not is_whole(under) then
+            local d2 = dx * dx + dz * dz
+            if d2 <= POOL_R * POOL_R then
+                local ground, above = at(x + dx, y, z + dz), at(x + dx, y + 1, z + dz)
+                local level = ground ~= nil and ground.occupancy ~= 0 and is_open(above)
+                local high = not level and d2 > (POOL_R - 1) * (POOL_R - 1)
+                    and is_whole(ground) and above ~= nil and above.occupancy ~= 0
+                    and is_open(at(x + dx, y + 2, z + dz))
+                if not level and not high then
+                    stats.pool_slope = stats.pool_slope + 1
+                    return false
+                end
+                if high then
+                    extra[#extra + 1] = { x = x + dx, y = y + 1, z = z + dz }
+                end
+                if d2 <= (POOL_R - 1) * (POOL_R - 1) and not is_whole(at(x + dx, y - 1, z + dz)) then
                     stats.pool_slope = stats.pool_slope + 1
                     return false
                 end
@@ -911,12 +939,15 @@ local function dig_pool(x, y, z)
             end
         end
     end
-    if not edits.room() then
+    if not edits.room(RESERVE) then
         stats.no_room = stats.no_room + 1
         return false
     end
     local water = {}
     edits.begin()
+    for _, p in ipairs(extra) do
+        edits.push(p, "engine:air")
+    end
     for dz = -POOL_R, POOL_R do
         for dx = -POOL_R, POOL_R do
             local d2 = dx * dx + dz * dz
@@ -929,7 +960,7 @@ local function dig_pool(x, y, z)
             end
         end
     end
-    if not edits.commit() then
+    if not edits.commit(RESERVE) then
         return false
     end
     -- The batch lands within MAX_WAITING * BATCH_EVERY ticks; wait past that.
@@ -949,6 +980,7 @@ local function on_grass(x, y, z)
         return
     end
     if candidate(x, y, z, POOL_CHANCE) then
+        stats.pool_tries = stats.pool_tries + 1
         if dig_pool(x, y, z) then stats.pools = stats.pools + 1 end
         return
     end
@@ -962,7 +994,7 @@ local function on_grass(x, y, z)
         return
     end
     stats.candidates = stats.candidates + 1
-    if not edits.room() then
+    if not edits.room((rock or bramble or mantle) and RESERVE or 0) then
         stats.no_room = stats.no_room + 1
         return
     end
@@ -1019,8 +1051,8 @@ end)
 
 local function report()
     game.log(string.format(
-        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d mantle, %d pools (%d not flat); refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
-        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.mantle, stats.pools, stats.pool_slope,
+        "spindle woodlands: %d grass turns, %d candidates, %d tree attempts, %d grown, %d rocks, %d brambles, %d mantle, %d pools of %d tried (%d not flat); refused: room %d, headroom %d, spacing %d, unloaded %d; errors %d (%s); batches waiting %d",
+        stats.turns, stats.candidates, stats.attempts, stats.grown, stats.rocks, stats.brambles, stats.mantle, stats.pools, stats.pool_tries, stats.pool_slope,
         stats.no_room, stats.headroom, stats.spacing, stats.unloaded, stats.errors, last_error or "none",
         edits.waiting()))
     for key in pairs(stats) do
