@@ -21,7 +21,7 @@
 -- The plain: shape.lua scales the relief down around this radius, so the
 -- ground is within about a hundred blocks of the base dome and one look down
 -- from SPAWN_ABOVE finds it — no hopping through unloaded chunks.
-local SPAWN_ABOVE = 30         -- the plain keeps the ground within ~22 of the base dome
+local SPAWN_ABOVE = 30 + tdw.shape.spawn_extra_above()   -- the plain keeps the ground within ~22 of the base dome; the alpine dev world stands it higher
 local SPAWN = {
     x = tdw.shape.SPAWN_X + 0.5,
     y = tdw.shape.spawn_base_y() + SPAWN_ABOVE,

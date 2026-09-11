@@ -29,6 +29,10 @@ for _, ring in ipairs(M.RINGS) do
     ring.u = { ring.t[1] * ring.t[1], ring.t[2] * ring.t[2] }
     M.ring_by_id[ring.id] = ring
 end
+-- shape.lua carries the frost ring's outer edge itself (it loads first);
+-- the two must not drift apart.
+assert(math.abs(M.ring_by_id.frost.u[2] - shape.ALPINE_EDGE_U) < 1e-12,
+    "shape.ALPINE_EDGE_U is not the frost ring's outer edge")
 
 -- Rings whose u range overlaps [u_lo, u_hi].
 function M.rings_overlapping(u_lo, u_hi)

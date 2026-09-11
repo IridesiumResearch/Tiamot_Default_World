@@ -55,9 +55,8 @@ local FERN_PATCH_FREQ = 1 / 36
 local FERN_PATCH_MIN = 0.0     -- half the ground is fern country
 local FERN_FREQ = 1 / 4
 local FERN_MIN = 0.02          -- within it, a little under half the cells
-local TUFT_FREQ = 1 / 3
-local TUFT_MIN = -0.05         -- most of a block's nine cell columns: a meadow, in clumps
-local TUFT_HEIGHT_FREQ = 1 / 2 -- a fine noise: how many cells tall each column's tuft is, two or three
+local TUFT_FREQ = 1.5          -- features under a block, so neighbouring cells decide on their own
+local TUFT_MIN = 0.20          -- far above the median: a card on about one column in three blocks (30% of the 0.10 cut, 2026-09-11)
 
 local TREE_CHANCE = 5          -- one grass block in this many is a candidate
 local TREE_SPACING = 3         -- no other trunk within this many blocks (twice the trees of 4)
@@ -162,25 +161,24 @@ tdw.build_biome("temperate_woodlands", function(ctx)
     local fern_patch = n.sub(n.noise("fern_patch", FERN_PATCH_FREQ, 1, 1.0), n.const(FERN_PATCH_MIN))
     local ferns = shape.compile("biome.woodlands.ferns",
         masked(n.min(n.min(over(2), fern_patch), n.sub(n.noise("fern", FERN_FREQ, 1, 1.0), n.const(FERN_MIN)))))
-    -- Tufts: placed per cell so they stand on the surface wherever it is,
-    -- two or three cells tall as a fine noise picks per column, and two or
-    -- three of a block's nine columns taken, in clumps. The engine draws a
-    -- run of billboard cells as ONE square sprite as tall as the run, the
-    -- whole tile across it, so a two-cell run is a card two thirds of a
-    -- block each way and a three-cell run a block — Minecraft's grass,
-    -- standing on the sub-node surface rather than floating over a block.
-    -- `a` is height above the ground in km; a column's tuft reaches
-    -- 3 cells * (0.8 + 0.6 h), h in +/-0.5, so 1.5 to 3.3 cells: two or
-    -- three. 0 < a < R as (R/2) - |a - R/2|: the terrain once, the cheap
-    -- reach term twice, rather than the terrain twice (over the op limit).
-    local function reach_half()
-        return n.mul(n.add(n.mul(n.noise("tuft_height", TUFT_HEIGHT_FREQ, 1, 1.0), n.const(0.6)), n.const(0.8)),
-            n.const(COVER_CELL * 1.5))
-    end
-    local above = n.mul(shape.terrain(false), n.const(-1.0))
-    local tuft_band = n.sub(reach_half(), n.abs(n.sub(above, reach_half())))
+    -- Tufts: the engine's cover fill stands them on the surface the fills
+    -- above made — two cells tall, one where the surface is a block's top
+    -- cell, always inside ONE block (never two stacked blocks, which
+    -- highlight and dig apart) and never on another tuft. This field only
+    -- says WHERE: one or two of a block's nine cell columns, each deciding
+    -- nearly on its own (the noise's features are under a block); off the
+    -- fern patches; and within a sixth of a block of the ground, which
+    -- keeps it off cave floors. T is depth below the surface in km, and
+    -- the base cell is sampled at its bottom face, which can sit up to a
+    -- sixth of a block under the surface the smooth fill drew — hence the
+    -- allowance rather than T < 0. The engine draws a run of billboard
+    -- cells as ONE square card as tall as the run, the whole tile across
+    -- it — five thin blades — so a two-cell run is a card two thirds of a
+    -- block each way. The card turns to face the camera until the engine's
+    -- fixed cards land (engine-asks, item 9).
     local tufts = shape.compile("biome.woodlands.tufts",
-        masked(n.min(n.min(tuft_band, n.mul(fern_patch, n.const(-1.0))),
+        masked(n.min(n.min(n.sub(n.const(COVER_CELL / 2), shape.terrain(false)),
+            n.mul(fern_patch, n.const(-1.0))),
             n.sub(n.noise("tuft", TUFT_FREQ, 1, 1.0), n.const(TUFT_MIN)))))
     -- In order: turf everywhere, litter over it in patches, gravel over both
     -- along the creek floors; then the cover over all of it.
@@ -190,7 +188,7 @@ tdw.build_biome("temperate_woodlands", function(ctx)
         { field = litter, material = blocks.leaf_litter },
         { field = creek, material = blocks.creek_bed },
         { field = ferns, material = blocks.fern },
-        { field = tufts, material = blocks.tall_grass },
+        { cover = blocks.tall_grass, cells = 2, take = tufts },
     }
 end)
 tdw.biomes.temperate_woodlands.soil = blocks.loam

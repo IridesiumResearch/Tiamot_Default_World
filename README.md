@@ -4,7 +4,8 @@ The default worldgen mod for the Tiamot voxel engine: a spindle-shaped flat
 earth with a fire-cored hollow. A dome on top, a body that narrows to a needle
 beneath, and a stack of shells around a void in the middle.
 
-The design and the numbers are in [`docs/spindle-mod-plan.md`](docs/spindle-mod-plan.md).
+The design and the numbers are in [`docs/spindle-mod-plan.md`](docs/spindle-mod-plan.md);
+what changed on each working day, and why, is in [`docs/changelog.md`](docs/changelog.md).
 The mod is written against the engine's public Lua API and nothing else; see
 [`AGENTS.md`](AGENTS.md) (vendored from the engine's `api/`) for the rules that
 shape it, and [`stubs/game.lua`](stubs/game.lua) for the API itself.
@@ -81,6 +82,13 @@ and names any biome that is registered but not yet built.
   biome and puts it over the whole surface, ignoring its ring and humidity,
   so one biome can be looked at on its own. Currently `temperate_woodlands`;
   set it to `nil` for the real world.
+- **Programs per ring**: a density program cannot ask where it is, so the
+  terrain and every biome's fills are compiled once per terrain MODE — the
+  temperate ring's terms, the frost ring's, and the two cross-faded — and
+  the generator picks by the chunk's radius (`shape.terrain_mode_for`).
+  Only the band a few hundred metres wide where two rings meet pays for
+  both rings' noise, and those are the only programs past 256 ops (the
+  engine's ceiling is 512 since 2026-09-11).
 - **Bounds, not guesses**: the generator reads the terrain field's range
   over each chunk from the engine's interval bound (`Density:bounds`), and
   every noise node is clamped to the range the fractal actually uses so that
@@ -143,10 +151,14 @@ built one at a time in its own file. Built so far:
 
 - [x] 1.1 Temperate Woodlands — turf over dark loam on the temperate ring's
       wetter half, patches of leaf litter, wet gravel along the creek beds;
-      fern carpets two cells tall in clumps and tufts of grass two or three
-      cells tall over all of it, each tuft one camera-facing sprite standing
-      on the sub-node surface (fills, so they are there the moment a chunk
-      is).
+      fern carpets two cells tall in clumps and tufts of grass on one or two
+      of a block's nine cell columns, stood on the surface by the engine's
+      cover fill: two cells tall, one where the surface is a block's top
+      cell, always inside one block — never two stacked blocks — and never
+      on another tuft. Each tuft is one square card of five thin blades (a
+      fill, so it is there the moment a chunk is). The card faces the
+      camera; standing it at its own fixed angle is the engine's
+      (`docs/engine-asks.md`, item 9).
       Grown by random tick on grass, each structure one merged batch: oaks
       and aspens in the Better Trees idiom (rounded trunks, a fork in one
       oak in four, branches that each carry a ragged clump of leaves, a
@@ -164,11 +176,25 @@ built one at a time in its own file. Built so far:
       and long continuous ridges (the zero contours of a noise, so they run
       for hundreds of blocks) with wide shallow hollows, grass over dirt,
       packed dry dirt along winding game trails and on bared ridge crests,
-      and smooth solitary glacial erratics grown by random tick. Treeless
-      but for the sentinels: very large bonsai in oak — a trunk of rough
-      spheres that leans out, eases back and spirals as it rises, branches
-      that rise and then hold flat pads of leaves out level, a wider pad on
-      top, root flares snaking into the turf — alone on the swells. Burrows
+      and smooth solitary glacial erratics grown by random tick; the swells'
+      low side is deepened by a third (`HOLLOW_DEEPEN`), so the hollows read
+      more than the rises. Treeless but for the sentinels: large bonsai in
+      oak, two thirds the height of the first cut and leafier — a trunk of
+      rough spheres that leans out, eases back and spirals as it rises, four
+      or five branches that rise and then hold thick flat pads of leaves out
+      level, one halfway and one at the tip, a wider pad on top, root flares
+      snaking into the turf — alone on the swells. Rose bushes in loose
+      groups: a rough ball of `rose_bush` cells on the turf with a few
+      `rose_blooms` cells over its top (red dots on the leaves, two materials
+      in one block since a texture is one colour). Digging a bush that has
+      blooms picks them instead: the blooms turn to leaves, the player gets
+      a rose or two (the `rose` item), and the blooms come back after four
+      minutes or on the bush's random tick; a bare bush digs like anything
+      else, after a two-second grace so the button held through the pick
+      does not take the bush. A right-click pick waits on the engine
+      (`docs/engine-asks.md`, item 16), as does reading the block inside
+      the dig hook (item 17). Say `roses` in chat to be put beside the first
+      bush planted this session. Burrows
       tunnelled into hillsides: a wandering tunnel of air with two blocks of
       roof, a fork in half of them, a squat den, and a second tunnel climbing
       out the other side (`schem.lua` writes and carves the ellipsoids). The two
@@ -178,6 +204,21 @@ built one at a time in its own file. Built so far:
       step and no line at the border. A grass tick belongs to the biome whose
       soil is under the turf (`tdw.soil_under`). The grass tick logs its counts every ten seconds and
       on `stats` in chat.
+- [x] 1.3 Alpine Highlands — the frost ring's dry half, and the first fake
+      erosion in the field itself (`shape.alpine_terms`): stepped plateaus
+      from a staircase of hard-clamped ramps on one slow noise, each riser
+      twenty blocks and sheer; razor-thin ridgeways as a tent along a
+      noise's zero contour, thirty blocks tall; glacial cirques as clamped
+      bowls forty blocks deep with steep headwalls; jagged crags from a fine
+      ridged noise over all of it. The materials follow the shape, reading
+      the same ramps back (`shape.alpine_steep`): granite as the skin with
+      slate in seams, gravel drifts (the creek-bed gravel) in tongues down
+      the risers and cirque walls, permafrost in patches where it is not
+      steep, thin dirt in small patches on the flats, and packed snow as a
+      crust one cell thick stood on the flats where the wind lets it lie (a
+      cover fill). The alpine terms cross-fade into the temperate ring's
+      over a few hundred metres past the frost ring's outer edge; the inner
+      edge waits on the Crown. Nothing grows by tick here yet.
 
 ## Licence
 

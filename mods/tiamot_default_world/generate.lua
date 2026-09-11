@@ -108,10 +108,14 @@ game.register_on_generate(function(buf, pos)
     -- D, the smooth depth below the base dome: exact bounds.
     local dmax = shape.dome_at(ulo) - Ylo
     local dmin = shape.dome_at(uhi) - Yhi
+    -- Which ring's programs: one ring's own away from the bands where
+    -- rings meet, the cross-faded ones in them (shape.lua, "terrain MODES").
+    local mode = shape.terrain_mode_for(ulo, uhi)
+    local T = P.top[mode]
     -- T, the real depth: the engine's bound on the terrain field over this
     -- chunk. Wrong in one direction only — it may say "maybe" about a chunk
     -- that turns out to be air, never "air" about one that is not.
-    local t = P.top.solid:bounds(pos)
+    local t = T.solid:bounds(pos)
     local tmin, tmax = t.low, t.high
 
     -- Bounds on the body: W is non-decreasing in Y.
@@ -137,7 +141,7 @@ game.register_on_generate(function(buf, pos)
     end
 
     -- Rock. Which programs, and what it is made of.
-    local V = inside_body and P.top or P.flank
+    local V = inside_body and T or P.flank
     local base, level = band_for(dmin)
     local tail = false
     if Yhi < shape.APEX_Y then
@@ -178,10 +182,26 @@ game.register_on_generate(function(buf, pos)
         if skin and inside_body and tmin < shape.SKIN_TOP then
             -- The biome's own top.
             local found = tdw.surface_biomes_in(ulo, uhi)
+            local function fills_of(biome)
+                return mode == "all" and biome.fills_all or biome.fills
+            end
             for _, biome in ipairs(found) do
-                for _, fill in ipairs(biome.fills) do
-                    if not fill.shared_only or #found > 1 then
-                        buf:fill_density(fill.field, fill.material, DETAIL)
+                for _, fill in ipairs(fills_of(biome)) do
+                    if fill.field and (not fill.shared_only or #found > 1) then
+                        -- A fill may ask for its own detail.
+                        buf:fill_density(fill.field, fill.material, fill.detail or DETAIL)
+                    end
+                end
+            end
+            -- The covers, after EVERY biome's fills: a cover reads the
+            -- surface the fills wrote, and where two biomes share a chunk
+            -- the second's turf must be down before the first's grass
+            -- stands on it. The engine keeps a run inside one block and
+            -- never stands one on another (`fill_cover`).
+            for _, biome in ipairs(found) do
+                for _, fill in ipairs(fills_of(biome)) do
+                    if fill.cover then
+                        buf:fill_cover(fill.cover, { cells = fill.cells, take = fill.take })
                     end
                 end
             end

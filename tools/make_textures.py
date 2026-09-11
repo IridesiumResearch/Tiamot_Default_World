@@ -43,6 +43,11 @@ BLOCKS = {
     "bramble":        ( 72,  60,  44,  0),
     "ladys_mantle":       ( 96, 124,  70,  0),
     "ladys_mantle_bloom": (172, 176,  92,  0),
+    "rose_bush":      ( 58,  90,  46,  0),
+    "slate":          ( 72,  78,  90,  0),
+    "permafrost":     (118, 108,  98,  0),
+    "snow":           (228, 232, 236,  0),
+    "rose_blooms":    (176,  42,  64,  0),
     "water":          ( 58,  92, 110,  0),
     "gloam_stone":    ( 74,  78,  90,  0),
     "abyss_stone":    ( 40,  38,  44,  0),
@@ -80,6 +85,19 @@ CELL_EDGES = [0, 5, 11, 16]     # the three cells across a 16-pixel face
 # name -> (radius in pixels, radius jitter, centre jitter)
 DOTS = {
     "oak_leaves": (2.6, 0.4, 0.6),
+    "rose_bush": (2.9, 0.4, 0.5),   # a denser, rounder leaf than the oak's
+}
+
+# A single round BLOOM in the middle of the tile, a little high, with a
+# scalloped edge: the whole tile is one cell's card, so one flower a cell.
+BLOOMS = {
+    "rose_blooms": 5.2,
+}
+
+# Items are PICTURES — a rose on its stem — because an item is never in the
+# world; the flat-colour rule is the world's. Drawn from a few strokes.
+ITEMS = {
+    "rose": {"petal": (176, 42, 64), "heart": (120, 24, 44), "stem": (58, 90, 46)},
 }
 
 # Ferns as blocky FRONDS rather than dots (dots read as leaves, 2026-09-10):
@@ -95,11 +113,15 @@ FROND = [
 ]
 FRONDS = {"fern"}
 
-# Grass as a SPRITE: blades, for the engine's card drawing mode (asks, item
-# 8) — a few tapering strokes from the bottom edge, binary alpha. Drawn as
-# cells until then, it reads as a tuft with gaps, which is fine.
+# Grass as a SPRITE: blades. The engine draws a run of billboard cells as
+# one square card with the whole tile across it, and its atlas tile is
+# sixteen pixels whatever the file is, so a card a block tall is sixteen
+# pixels a block and a one-pixel blade is a sixteenth of a block wide —
+# a blade, not a stroke. Five of them per card, one to a fifth of the tile
+# and jittered inside it so they never bunch, most reaching near the top,
+# each leaning and bending its own way. Binary alpha.
 BLADES = {
-    "tall_grass": 7,
+    "tall_grass": (5, 11, 16),   # blades per card; shortest, tallest in pixels
 }
 
 # Rosettes and sprays, for the mantle: a rosette is a few round leaves
@@ -202,20 +224,40 @@ def texture(name, r, g, b, grain):
         return png(SIZE, SIZE, rows)
     blades = BLADES.get(name)
     if blades is not None:
+        count, shortest, tallest = blades
         rng = lcg(sum(ord(c) * 31 ** i for i, c in enumerate(name)) + 5)
         on = [[False] * SIZE for _ in range(SIZE)]
-        for _ in range(blades):
-            x = (next(rng) % (SIZE * 10)) / 10
-            top = 3 + next(rng) % 9                     # blade height in pixels, 3..11
-            lean = ((next(rng) % 1000) / 1000 - 0.5) * 0.5
-            for i in range(top):
-                y = SIZE - 1 - i
-                bx = int(x + lean * i)
-                width = 2 if i < top // 2 else 1        # tapering
-                for w in range(width):
-                    if 0 <= bx + w < SIZE:
-                        on[y][bx + w] = True
+        slot = SIZE / count
+        for i in range(count):
+            # One blade to a slot, rooted near its middle: the jitter is
+            # under a pixel, so two roots are never in touching pixels and
+            # a blade is a blade from the ground up, not a shared stroke.
+            x = slot * (i + 0.5) + ((next(rng) % 1000) / 1000 - 0.5) * 0.9
+            top = shortest + next(rng) % (tallest - shortest + 1)
+            lean = ((next(rng) % 1000) / 1000 - 0.5) * 0.4      # pixels per pixel of height
+            bend = ((next(rng) % 1000) / 1000 - 0.5) * 4.0      # how far the tip curls, in pixels
+            for h in range(top):
+                t = h / top
+                bx = int(x + lean * h + bend * t * t)
+                if 0 <= bx < SIZE:
+                    on[SIZE - 1 - h][bx] = True
         rows = [[v for x in range(SIZE) for v in (r, g, b, 255 if on[y][x] else 0)] for y in range(SIZE)]
+        return png(SIZE, SIZE, rows)
+    bloom = BLOOMS.get(name)
+    if bloom is not None:
+        mx, my = SIZE / 2, SIZE / 2 - 1
+        rows = []
+        for y in range(SIZE):
+            row = []
+            for x in range(SIZE):
+                px, py = x + 0.5, y + 0.5
+                d2 = (px - mx) ** 2 + (py - my) ** 2
+                on = d2 <= bloom * bloom
+                # Petals: the rim is nibbled in a pattern, so it is not a coin.
+                if on and d2 >= bloom * bloom - 3.0 and (x * 3 + y * 5) % 4 == 0:
+                    on = False
+                row += [r, g, b, 255 if on else 0]
+            rows.append(row)
         return png(SIZE, SIZE, rows)
     dots = DOTS.get(name)
     if dots is not None:
@@ -264,10 +306,35 @@ def texture(name, r, g, b, grain):
     return png(SIZE, SIZE, rows)
 
 
+def item_picture(name, colours):
+    """An item icon: a rose — petals, a darker heart, a stem with one leaf."""
+    petal, heart, stem = colours["petal"], colours["heart"], colours["stem"]
+    pixels = [[(0, 0, 0, 0)] * SIZE for _ in range(SIZE)]
+    def put(x, y, c):
+        if 0 <= x < SIZE and 0 <= y < SIZE:
+            pixels[y][x] = (c[0], c[1], c[2], 255)
+    mx, my, radius = 8.0, 5.0, 3.6
+    for y in range(SIZE):
+        for x in range(SIZE):
+            d2 = (x + 0.5 - mx) ** 2 + (y + 0.5 - my) ** 2
+            if d2 <= radius * radius:
+                put(x, y, heart if d2 <= 1.3 else petal)
+    for y in range(9, 16):
+        put(7, y, stem)
+    for x in range(8, 11):
+        put(x, 11, stem)
+    put(9, 10, stem)
+    rows = [[v for x in range(SIZE) for v in pixels[y][x]] for y in range(SIZE)]
+    return png(SIZE, SIZE, rows)
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     for name, (r, g, b, grain) in BLOCKS.items():
         (OUT / f"{name}.png").write_bytes(texture(name, r, g, b, grain))
+        print(f"wrote {name}.png")
+    for name, colours in ITEMS.items():
+        (OUT / f"{name}.png").write_bytes(item_picture(name, colours))
         print(f"wrote {name}.png")
 
 

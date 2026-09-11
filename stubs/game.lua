@@ -78,17 +78,74 @@ function ChunkBuffer:fill_below_heightmap(heightmap, material) end
 ---This is how you get terrain a heightmap cannot describe: overhangs, arches,
 ---and caves. See `game.density`.
 ---
----Evaluated at BLOCK resolution — one sample per block. Sub-node resolution is
----27 times the samples and is not offered; carve detail afterwards with
----`set_subnode`, where the cost is proportional to what you actually change.
+---Evaluated at BLOCK resolution by default — one sample per block.
 ---
----Measured on the reference machine, per chunk: **358 us** for a single noise
----node, **719 us** for terrain with caves cut out of it. For comparison a
----heightmap generator is 52 us and lighting the same chunk is 1.44 ms. It runs
----once, when the chunk is first generated, and never again.
+---**Pass `{ detail = "smooth" }` or `{ detail = "sampled" }` for terrain at
+---sub-node resolution**, which is how you get slopes that are not staircases
+---without writing 110,592 `set_subnode` calls a chunk. The engine samples only
+---the blocks the surface actually CROSSES: a block deep in the ground is solid
+---in all 27 of its cells and one in open air is empty in all of them, and
+---neither is worth asking about twice.
+---
+---- `"smooth"` interpolates the block-resolution samples down to the cells.
+---  Cheap, and it cannot show anything finer than the block-scale field — it
+---  removes staircases rather than adding detail.
+---- `"sampled"` asks your field about all 27 cells, so a high-frequency term
+---  you add shows up in the terrain.
+---
+---The rule is the same at either resolution: cells where the field is positive
+---take the material and every other cell is left as it was. So fills LAYER —
+---stone with one field, dirt over it with a band of the same field, grass over
+---that — and the first fill at a surface is the one that gives it its shape.
+---
+---Measured on the reference machine, per chunk, for terrain with caves:
+---**729 us** at block resolution, **1.08 ms** smooth (1.5x), **3.98 ms**
+---sampled (5.5x). A single noise node is 358 us, a heightmap generator 52 us,
+---and lighting the same chunk 1.44 ms. It runs once, when the chunk is first
+---generated, and never again — but a server streaming chunks generates many per
+---tick, so 5.5x is a real choice rather than a free one.
+---
+---```lua
+---buf:fill_density(field, stone)                          -- blocks, as before
+---buf:fill_density(field, stone, { detail = "smooth" })   -- no staircases
+---buf:fill_density(field, stone, { detail = "sampled" })  -- and fine detail
+---```
 ---@param density Tiamot.Density
 ---@param material integer
-function ChunkBuffer:fill_density(density, material) end
+---@param options table? `{ detail = "smooth" | "sampled" }`
+function ChunkBuffer:fill_density(density, material, options) end
+
+---Stands a run of cells on every surface the buffer already holds: ground
+---cover — grass, ferns, anything that grows UP from the ground.
+---
+---For every cell column, wherever an empty cell sits on an occupied one, that
+---cell and up to `cells - 1` empty cells above it become `material`. **Inside
+---one block, always**: the run stops at the block's top, so a tuft is never
+---two stacked blocks that highlight and dig apart, and where the surface is
+---a block's top cell the run is that one cell. It never overwrites a cell
+---that holds something, and cover this call writes is not ground for it — a
+---run never stands on another run.
+---
+---**Why a field cannot do this.** A density has no idea which block a sample
+---is in, and a run two cells tall in a block whose surface sits at an
+---arbitrary cell contains the block's one sample point in a third of columns
+---— so the sampled `fill_density` misses the rest in stripes that follow the
+---contours. The buffer knows exactly where its surfaces are.
+---
+---`take` is a density sampled at the base cell: positive means a run goes
+---there, so a noise minus a threshold thins the cover, and a term from your
+---terrain field keeps it off cave floors. Evaluated only in the blocks that
+---hold a surface, so it is cheap. Left out, every surface is covered.
+---
+---Call it AFTER the fills that make the ground — it reads what they wrote.
+---
+---```lua
+---buf:fill_cover(grass, { cells = 2, take = tufts })   -- two cells, where tufts > 0
+---buf:fill_cover(moss)                                 -- one cell, everywhere
+---```
+---@param material integer
+---@param options table? `{ cells = 1 | 2 | 3, take = Tiamot.Density }`
+function ChunkBuffer:fill_cover(material, options) end
 
 ---Fills every block below `level` with a fluid, around the terrain.
 ---
@@ -127,6 +184,37 @@ function ChunkBuffer:fill_fluid_below(level, fluid) end
 ---@param z integer
 ---@param material integer
 function ChunkBuffer:set_block(x, y, z, material) end
+
+---Writes one block by WORLD position, ignoring anything outside this chunk.
+---
+---**Dropping is the point.** A structure is rooted in one place and reaches out
+---from it, and nothing makes that reach stop at a chunk edge. The way to build
+---one that crosses is NOT to write into your neighbours and hope the engine
+---holds it — chunks are generated in whatever order players walk towards them,
+---so that gives a different world depending on which side somebody approached
+---from. Instead run your structure pass for every chunk within reach, write all
+---of it in world coordinates, and let each chunk keep the slice that lands in
+---it. See the mod guide, "Structures that cross a chunk edge".
+---
+---Returns whether the write landed, which you may ignore.
+---@param x integer World block x.
+---@param y integer World block y.
+---@param z integer World block z.
+---@param material integer
+---@return boolean landed
+function ChunkBuffer:set_world(x, y, z, material) end
+
+---The same write at sub-node resolution, in world CELL coordinates — three to
+---a block, so block `(1, 0, 0)`'s lowest corner cell is `(3, 0, 0)`.
+---
+---Expands the buffer only when the write lands, so running a structure pass
+---over a neighbourhood costs nothing extra for the chunks it does not touch.
+---@param x integer World cell x.
+---@param y integer World cell y.
+---@param z integer World cell z.
+---@param material integer
+---@return boolean landed
+function ChunkBuffer:set_subnode_world(x, y, z, material) end
 
 ---Sets one sub-node cell. **Expands the buffer to sub-node resolution**, which
 ---costs 27x the memory and fill time. Opt-in for a reason.
@@ -180,6 +268,11 @@ function Stream:next_bool() end
 ---@field sounds { step: string }? What this block sounds like underfoot. The client plays its own footsteps from its own movement, so this is the only way it can know. Unqualified ids mean your own mod's.
 ---@field light_emit Tiamot.LightEmit? Light this block gives off. Omit for anything that is not a lamp.
 ---@field transparent boolean? Whether this block can be seen through: glass. **A flag, not an alpha value** — what it looks like is its texture's own alpha, and a second opacity number beside it would be two sources of truth for one appearance. Three things change (Sub-Node Contract §8.1): a face draws where exactly one side of it is transparent, so a wall behind a window is not a hole and two panes together do not double up; the block is drawn in a blended pass after the opaque world; and light passes through it, so a glass roof does not make a dark room. **Collision does NOT change — glass is solid** and you cannot walk through a window. Only a whole block of one transparent material passes light; a chiselled or mixed block holding glass falls back to the ordinary cell rule.
+---@field cutout boolean? Whether this block is see-through in PLACES rather than everywhere: leaves, a fern, a grate. **Not a variant of `transparent` — the opposite culling rule**, and a block declaring both is refused rather than given whichever the engine tests first. Glass hides the face between two panes so a window does not double up; foliage KEEPS the faces between two leaf blocks, because culled, a canopy is a hollow shell whose alpha holes look straight through the world at the sky. Drawn alpha-tested with the opaque world rather than blended, so it writes depth, occludes itself correctly at every angle, and needs none of the sorting §8.1 gave up on. Light passes as it does through glass; dappled shade is not expressible. Collision does NOT change — leaves are solid. The cost is that every interior face of a mass of foliage is drawn (Sub-Node Contract §8.2), which is what makes it look like foliage rather than a painted box.
+---@field passable boolean? Whether a body walks through it: grass, ferns, vines. **Collision only.** The cell is still there for everything else — it meshes, it is lit, it holds fluid out, and a ray still STOPS at it, which is what lets a player aim at a tuft and break it. Without this every plant is a lip: collision is at sub-node resolution, so a two-cell fern is two thirds of a yard to climb, and foliage has to be built around that rather than around what it should look like (Sub-Node Contract §2).
+---@field sway boolean? Whether the top of it moves in a fake wind: grass, leaves, a banner. **Presentation only** — the world does not know it is moving, so collision, lighting and the server's idea of where anything is are all untouched. The mesher marks the TOP EDGE of each face and the shader bends only those, so a plant bends from base to tip rather than sliding, and its base stays planted. The motion is smooth noise over world position and time, so a field leans in gusts rather than each plant buzzing on its own (Sub-Node Contract §8.3).
+---@field billboard boolean|"cross"? Whether its cells are drawn as SPRITES rather than as geometry: grass, ferns, flowers. `true` is one card that turns to face the camera; `"cross"` is two FIXED cards on the diagonals of the run's column — the X Minecraft and Minetest draw, which reads as a plant and holds still as the player walks round it. **This is what a sprite card is here** — the engine has no diagonal geometry, and a cell drawn as a cube shows a NINTH of its texture per face (a texture repeats once per block), so grass built from cells reads as little floating boxes. A run of cells in a column is ONE sprite as tall as the run: one cell is a third of a yard, three is a yard. It turns about the vertical axis only, so it never lies over when you look down. The cells stay where they are for collision, light, fluid and the dig ray — only the drawing changes (Sub-Node Contract §8.4).
+---@field tint table? How this block's colour varies across the world: `{ strength = 0.15, scale = 32, low = {0.9, 1.0, 0.85}, high = {1.0, 0.95, 1.0} }`. **This is what stops ground reading as a repeating texture.** The client multiplies the texture by a colour sampled from one smooth field of world position — the same field for every material, so neighbouring materials vary together rather than each drifting on its own. `strength` (0..1) moves the TONE and is the whole of what most mods want: brightness variation alone breaks up the repeat. `low` and `high` are optional RGB multipliers at the two ends of the same field, for a hue shift — grass greener in one place than another — and default to no shift at all. `scale` is how many blocks one period spans, tens rather than ones: a period near a block makes noise rather than ground. Presentation only — nothing in the simulation reads it, and it is not in any determinism hash.
 ---@field absorbs { rate: integer, becomes: string? }? Ground that drinks. `rate` is how many of the block's 27 cells it takes out of fluid touching it, per fluid tick, 1..=27. `becomes` is the block it turns into once it has taken them, qualified against your own mod — omit it for ground that drinks for ever without changing, which is a drain rather than a sponge. **Saturation is a chain of materials, not engine state** (Sub-Node Contract §4.3): `dirt` → `damp_dirt` → `saturated_dirt`, and the chain ends where a block stops naming a successor. A block of two or more materials never absorbs, because there is no way to turn one material inside a mix into its successor without per-cell saturation state.
 
 ---How `dominance` decides a mixed block's hardness.
@@ -408,15 +501,71 @@ function game.open_container(name, player) end
 ---@return boolean closed
 function game.close_container(name, player) end
 
----What is in a container, in the same shape `game.inventory` reports stacks.
+---What is in a container, in the same shape `game.inventory` reports stacks,
+---plus a `slot` on each — one-based, and the slot the stack is actually in.
 ---
----**Empty while somebody has it open**, because those contents are in that
----player's screen and about to change — answering with a copy that is already
----stale would be worse than answering with nothing. Close it first if you need
----to know.
+---Empty slots are left out, so `#` is the number of OCCUPIED slots and never
+---the size of the container. Index by `slot` if you care where things are:
+---
+---```lua
+---local by_slot = {}
+---for _, entry in ipairs(game.container(name)) do by_slot[entry.slot] = entry end
+---if by_slot[2] then ... end   -- something in the input slot
+---```
+---
+---**It answers while somebody has it open.** It used to answer empty, on the
+---grounds that a copy about to change is worse than nothing — which was right
+---while only players could touch a container, and wrong once a mod could run a
+---furnace: a machine that went blind whenever its owner opened it to look would
+---stop exactly when they were watching.
 ---@param name string
 ---@return table[] stacks
 function game.container(name) end
+
+---Puts a stack into a container. Returns how many UNITS it took.
+---
+---**This and `game.container_take` are what make a machine expressible.** A
+---chest only ever needed a player dragging things into it; a furnace has to
+---consume its own input and place its own output on a tick nobody is watching,
+---and a hopper has to feed one.
+---
+---The spec is the same table `game.give` takes — `material`, and `count` or
+---`units`, with optional `shape` and `detail` — plus an optional `slot`, which
+---is **one-based**. Omit `slot` for "anywhere it fits".
+---
+---**Units taken, not true or false**, because a container is a fixed size and a
+---partial fit is ordinary: what did not fit was never taken from you, so
+---compare the answer with what you offered and keep the rest.
+---
+---```lua
+---local took = game.container_give(furnace, { material = "my:ore", count = 1, slot = 2 })
+---if took < 27 then ... end     -- the input slot was already full
+---```
+---@param name string
+---@param spec table
+---@return integer units How many units went in.
+function game.container_give(name, spec) end
+
+---Takes material out of a container. Returns how many UNITS it got.
+---
+---The same spec as `game.container_give`, including the one-based `slot` — and
+---naming the slot is usually what you want in a machine, so that consuming the
+---ore in the input slot cannot quietly eat the ingots in the output slot.
+---
+---Matched exactly on material, shape and detail, for the reason `game.take` is:
+---a recipe asking for stone must not melt down the named sword somebody left in
+---the same box.
+---
+---```lua
+---local ore = game.container_take(furnace, { material = "my:ore", count = 1, slot = 2 })
+---if ore > 0 then
+---    game.container_give(furnace, { material = "my:ingot", units = ore, slot = 3 })
+---end
+---```
+---@param name string
+---@param spec table
+---@return integer units How many units came out.
+function game.container_take(name, spec) end
 
 ---Removes a container and hands back everything that was in it.
 ---
@@ -492,6 +641,42 @@ function game.register_item(spec) end
 ---**Registration window only.**
 ---@param callback fun(buf: Tiamot.ChunkBuffer, pos: Tiamot.ChunkPos)
 function game.register_on_generate(callback) end
+
+---Gives one chunk its biome colour: a multiplier every TINTED material in it
+---is drawn through.
+---
+---```lua
+---game.register_chunk_tint(function(pos)
+---    local warmth = game.density(WARMTH):bounds(pos)
+---    if warmth.low > 0.0 then return 1.0, 0.85, 0.6 end   -- dry, sandy
+---    return 0.75, 1.0, 0.8                                 -- cool, green
+---end)
+---```
+---
+---**Only materials that declare a `tint` take it.** Declaring one is what opts
+---a material into varying with its surroundings, so it is also what opts it
+---into varying with the place — you do not say it twice, and stone stays the
+---colour of stone in every biome.
+---
+---**The engine blends it; do not try to.** The colour is carried at each
+---chunk's four corners, each the mean of the columns meeting there, so
+---neighbouring chunks agree on the corners they share: no seam, and no grid of
+---16-block squares. A hard step between two biomes comes out as a gradient
+---about a chunk wide, which is what a biome edge should look like.
+---
+---**Asked every time a chunk is served, and never stored.** Change your palette
+---and the world changes with it, instead of the colour it used to be staying in
+---the ground behind the player. One call per chunk, so make it a lookup — this
+---is not the place to run your generator again.
+---
+---One per mod, and the first to answer in load order wins: two mods with an
+---opinion about what colour a place is cannot be averaged into a third opinion
+---either of them meant.
+---
+---Channels are 0..1 and are clamped. `pos` carries `x`, `y`, `z`, `seed` and
+---`domain`.
+---@param callback fun(pos: table): number, number, number
+function game.register_chunk_tint(callback) end
 
 ---Called when somebody leaves. **Registration window only.**
 ---
@@ -997,8 +1182,9 @@ function game.register_on_chat(callback) end
 ---@class Tiamot.WidgetStyle
 ---@field background integer[]? `{r, g, b}` or `{r, g, b, a}`.
 ---@field border integer[]? Same shape. The width is the client's.
----@field nine_slice integer[]? 32 bytes of content hash, stretched around the widget.
+---@field nine_slice integer[]? 32 bytes of content hash, drawn as a nine-slice frame behind the widget. **The border is a THIRD of the image**, both ways: draw your frame so its corners are the outer third and they keep their size at any box size while the edges stretch. That is what a nine-slice is for, and it is why there is no border argument. Goes UNDER `background` and `border`, so a widget with both gets the flat colour inside the frame. Fetched by hash like a texture; a frame that has not arrived yet draws nothing and fills in when it lands.
 ---@field text_colour integer[]? Same shape as `background`.
+---@field font string? A registered font id — `game.register_font` qualified it with your mod, so `"my_mod:display"`. The client draws this widget's text in it. A font that failed to load, or a name nothing registered, falls back to the client's own face: a missing file is never a missing screen, so do not design a dialog that only makes sense in your typeface.
 ---@field text_size integer? In virtual pixels; the client keeps it legible.
 
 ---Fields accepted by `game.show_dialog` and `game.update_dialog`.
@@ -1107,6 +1293,35 @@ function game.register_on_dialog_event(callback) end
 ---client.
 ---@param spec Tiamot.SoundSpec
 function game.register_sound(spec) end
+
+---Registers a font your interface can draw text in.
+---
+---**Charter rule 1 for the lettering.** The engine has an opinion about exactly
+---one typeface — its own, which is what a mod that says nothing gets — and a
+---mod that can choose its blocks, sounds and dialogs but not its lettering has
+---screens that all look like the engine's.
+---
+---`file` is a path inside your mod's directory. It travels to clients by
+---content hash on the same pipeline as a texture or a sound, so a client that
+---already has it fetches nothing.
+---
+---Name it on any widget with text: `{ type = "label", font = "my_mod:display" }`.
+---
+---**Limits, and why.** Eight fonts per server and 2 MiB each. The size cap is
+---small because a font file is a parser running on bytes a server pushed; the
+---count cap is about the client's glyph atlas rather than the files, since what
+---costs is coverage — a face with a full CJK range is orders of magnitude more
+---atlas than a Latin one. A ninth `register_font` is an error where you wrote
+---it, not a font quietly dropped later.
+---
+---A font a client cannot load falls back to the client's own face, and so does
+---a style naming one nothing registered. **A missing file is never a missing
+---screen.**
+---
+---Ship a font you have the right to ship: it is published with your mod, and
+---the engine has no way to check a licence.
+---@param spec { id: string, file: string }
+function game.register_font(spec) end
 
 ---Binds a sound to a named event. Registration window only.
 ---
@@ -1572,13 +1787,47 @@ function game.set_fluid(position, spec) end
 ---
 ---Pass `"engine:air"` to clear a block.
 ---
+---**A third argument makes it a partly filled block**: a 27-bit mask of
+---which cells hold the material, indexed `x + 3*y + 9*z` like everything
+---else (the shape editor, `on_place`, `get_block`'s `occupancy`), with air in
+---the rest. This is the runtime half of sub-node worldgen — a generator can
+---shape a surface to the cell with `fill_density`'s `detail`, and this is how
+---something a mod grows on it afterwards (a tree, a stalactite, a boulder)
+---is more than whole blocks. A full mask is a whole block; a mask with no
+---cell, or a bit past the 27th, is an error rather than a guess.
+---
 ---```lua
 ---game.set_block({ x = 10, y = 64, z = -3 }, "core_milk:waterlogged")
+----- the middle column of a block, three cells tall: a thin branch
+---game.set_block({ x = 10, y = 70, z = -3 }, "my_mod:log", (1 << 4) | (1 << 13) | (1 << 22))
 ---```
+---**A masked write REPLACES the block by default**, which is what you want for
+---something growing into open air and wrong for something growing into ground.
+---The cells the mask does not name become air, so a boulder placed into turf
+---sits in a footprint of its own bounding block. Pass `{ merge = true }` for the
+---other shape: the cells you name become yours, and every cell you did not name
+---keeps what it held.
+---
+---```lua
+----- A rock embedded in the turf, rather than standing in a hole in it.
+---game.set_block(pos, "my_mod:rock", cells, { merge = true })
+---```
+---
+---A named cell is taken whatever was in it — merging is about the cells you did
+---NOT name. To fill only what is empty, ask what the block holds first.
+---
+---Merging into a block that holds a different material sends one edit per named
+---cell, because that is the only form that adds a material to a block without
+---erasing the first (Sub-Node Contract §7.4). It costs what a player placing
+---the same cells costs; a shape of many cells across varied ground is not free.
+---Without a mask there are no cells to keep, so `merge` has nothing to answer
+---and is ignored.
 ---@param position { x: integer, y: integer, z: integer }
 ---@param block string A registered block id, qualified.
+---@param occupancy integer? Which of the 27 cells to fill. Omit for the whole block.
+---@param options { merge: boolean? }? `merge` keeps the cells the mask does not name.
 ---@return boolean queued
-function game.set_block(position, block) end
+function game.set_block(position, block, occupancy, options) end
 
 ---A dig about to happen.
 ---@class Tiamot.DigEvent
@@ -1739,6 +1988,61 @@ function game.register_on_fluid_flow(callback) end
 ---@param spec Tiamot.ActionSpec
 function game.register_action(spec) end
 
+---Offers the player an option, shown in the in-game settings screen.
+---
+---**Declared like an action and answered like a key binding.** You say what you
+---offer; the client draws it under your mod's name in the screen a player
+---already opens; their answer belongs to the world they are in, so it is still
+---there when they come back to that world or that server and does not follow
+---them into the next one.
+---
+---```lua
+---game.register_setting{ id = "nameplates", name = "Show name tags", default = 1 }
+---game.register_setting{
+---    id = "difficulty",
+---    name = "How hard the mimics hit",
+---    description = "Takes effect the next time one wakes up.",
+---    options = { "gentle", "ordinary", "unfair" },
+---    default = 1,
+---}
+---```
+---
+---No `options` is a checkbox and `default` is `0` or `1`; with options it is a
+---dropdown and `default` indexes them. A list of exactly one is refused — a
+---choice of one is not a choice — and a `default` past the end is clamped
+---rather than refused, because a mod that fails to load teaches nobody
+---anything.
+---
+---**An answer arrives with a PLAYER, so a setting cannot shape a world.**
+---Worldgen has already happened by the time anybody joins — for chunks
+---generated before the first player, it happened with nobody to ask — so a
+---setting cannot decide how terrain is made, and a mod that tried would get a
+---world whose shape depended on who logged in first. Options that shape a world
+---belong in your own configuration, read when you load.
+---@param spec { id: string, name: string?, description: string?, options: string[]?, default: integer? }
+function game.register_setting(spec) end
+
+---What a player answered for one of your settings.
+---
+---A boolean for a checkbox, and the chosen string for a dropdown — never the
+---raw number, so comparing against `"unfair"` keeps working when you insert an
+---option above it.
+---
+---Answers with your declared default for a player who has never touched it,
+---which is most of them, so this needs no guard.
+---
+---```lua
+---if game.setting(uuid, "my_mod:nameplates") then ... end
+---if game.setting(uuid, "my_mod:difficulty") == "unfair" then ... end
+---```
+---
+---`nil` for an id nothing registered. Key on the UUID, never the display name
+---(charter rule 13).
+---@param player string The player's UUID, as 64 hex characters.
+---@param id string The qualified setting id.
+---@return boolean|string|nil
+function game.setting(player, id) end
+
 ---Looks up a registered block's numeric id by its string id.
 ---
 ---String ids like `"core:white"` are stable forever. Numeric ids are per
@@ -1781,6 +2085,104 @@ local Density = {}
 ---meant; there is nothing else to know about it.
 ---@return integer
 function Density:len() end
+
+---What this field can possibly be over one chunk, without evaluating it.
+---
+---Returns `{ low, high, all_solid, all_empty }` for the chunk at `pos` — the
+---same `pos` your `register_on_generate` was handed. **The engine already does
+---this before every `fill_density`**, so terrain the surface cannot reach costs
+---nothing whether you call this or not; use it to skip work of your OWN, like a
+---second field or a pass of decoration.
+---
+---```lua
+---game.register_on_generate(function(buf, pos)
+---    if surface:bounds(pos).all_empty then return end   -- nothing here but sky
+---    buf:fill_density(surface, stone)
+---end)
+---```
+---
+---**It is a bound, not a measurement, and the difference is the whole point.**
+---The tempting version of this is to sample the eight corners and the centre
+---and look at the signs — and that is wrong: noise between two samples is not
+---bounded by those samples, so a chunk whose nine samples agree can still
+---contain surface, and skipping it leaves a hole. What decides whether the
+---shortcut bites is feature size against sample spacing, so a gentle heightmap
+---survives it and your caves do not. This answers from the shape of your
+---program instead, and it can be trusted when it says no.
+---
+---`all_solid` and `all_empty` are the two answers worth acting on for terrain.
+---Anything else means the surface might cross this chunk and only evaluating
+---will say. **Wrong in one direction only**: it may say "maybe" about a chunk
+---that turns out to be empty, and it will never say "empty" about a chunk that
+---is not.
+---
+---**`low` and `high` are how you pick a biome.** A selector field — coherent
+---noise, no height term — bounded over one chunk tells you which biomes that
+---chunk can hold, so you run one generator instead of all of them:
+---
+---```lua
+---local warmth = game.density(WARMTH):bounds(pos)
+---if warmth.low > 0.0 then        warm(buf, pos)     -- cold ruled out
+---elseif warmth.high < 0.0 then   cold(buf, pos)     -- warm ruled out
+---else                            both(buf, pos)     -- the chunk straddles
+---end
+---```
+---
+---**Pass the `pos` you were handed**, not a table you built: it carries the
+---world seed, and a bound over a box is a fact about one world's field. The
+---interval that holds for every seed is the one that says the same thing in
+---every chunk, which is the thing this call exists not to be. A `pos` with no
+---`seed` is an error rather than a guess.
+---
+---How often it can decide is set by your own field, and the rule is that a box
+---cannot bound features smaller than itself.
+---
+---For terrain: the surface sits where your noise balances your height term, so
+---the band it cannot see through is the noise amplitude divided by that term's
+---coefficient. `noise(40) - y * 0.08` has 500 blocks of real relief and a band
+---to match; `noise(11) - y` has eleven and 93% of its chunks decided outright.
+---
+---For a selector: **72%** of chunks land wholly one side of a threshold at
+---frequency 0.001, 60% at 0.002, 4% at 0.004, and none at all by 0.01. Choose
+---biomes from a WIDE field, or you will run every biome in every chunk again.
+---@param pos table The chunk position your generator was given.
+---@return { low: number, high: number, all_solid: boolean, all_empty: boolean }
+function Density:bounds(pos) end
+
+---This field's value at ONE world position.
+---
+---**For choosing WHERE, not for looping.** A generator placing structures has
+---to answer "where is the ground at this x and z?" once per tree — a few dozen
+---times a chunk, not once per block. That is the same shape as scattering ore:
+---proportional to what you place, not to the volume you place it in.
+---
+---It is also the only way to place a structure on ground you cannot see. Your
+---buffer is write-only, and a structure rooted in a neighbouring chunk has no
+---buffer of yours to read.
+---
+---```lua
+---local ground = math.floor(surface:at(x, 0, z, pos.seed))
+---```
+---
+---`y = 0` is where a field of the form `noise - y` changes sign, so that is its
+---height.
+---
+---**Do not loop this over a chunk.** 4,096 of these is 4,096 crossings into the
+---VM and back for an answer `buf:fill_density` gives in one call, in native
+---code, with the bounds pruning in front of it. It is not merely slower — it is
+---the exact cost the opaque handles were shaped to prevent. Nothing stops you,
+---because the engine cannot tell a loop from a list.
+---
+---The seed is a separate argument rather than read off a `pos` the way `bounds`
+---reads it, because the position asked about is a WORLD block and not a chunk:
+---a structure asks about ground two chunks away, which no `pos` you hold
+---describes.
+---@param x number World x.
+---@param y number World y.
+---@param z number World z.
+---@param seed integer The world seed, from your generator's `pos.seed`.
+---@return number
+function Density:at(x, y, z, seed) end
 
 ---Compiles a density field from a table of nested operations.
 ---
@@ -1828,13 +2230,19 @@ function Density:len() end
 ---  `stream` really matters: it is a NAME, hashed into the world seed, and two
 ---  nodes with different names give independent fields. Give your terrain and
 ---  your caves different streams or the caves will follow the hills exactly.
+---- `{ op = "map", map = <a Tiamot.Map> }` — the map's value under this
+---  sample, ignoring y. **The way an eroded field becomes terrain.** A map is
+---  a surface, so subtract `y` to get a density from it. The node takes a COPY
+---  of the map as it is when `game.density` is called: a program that read a
+---  live map would generate different terrain after your next `blur`, and the
+---  seam between the two would be permanent and invisible.
 ---- `{ op = "abs", a = ... }`
 ---- `{ op = "clamp", a = ..., low = -1, high = 1 }`
 ---- `{ op = "add" | "sub" | "mul" | "div" | "min" | "max", a = ..., b = ... }`
 ---  — `sub` is `a - b` and `div` is `a / b`, in the order written.
 ---
 ---Refused, with the reason, if the table is malformed, nests more than 64
----deep, needs more than 8 buffers at once, or compiles to more than 256
+---deep, needs more than 8 buffers at once, or compiles to more than 512
 ---operations. A field a person writes is a dozen.
 ---@param spec table
 ---@return Tiamot.Density
@@ -1892,6 +2300,33 @@ function Map:blur(radius) end
 ---@param other Tiamot.Map
 ---@param how string
 function Map:combine(other, how) end
+
+---Replaces every value with a density field's, sampled on one plane.
+---
+---**The other half of the loop.** `{ op = "map" }` lets terrain read a field;
+---this lets a field read terrain. Together they are what makes erosion
+---expressible: take your surface into a map, run passes over it — blur,
+---combine, clamp — and build the terrain from the result.
+---
+---```lua
+---local land = game.map{ name = "land", side = 256, scale = 16 }
+---land:fill(game.density(SURFACE), { y = 0.0, seed = 99 })
+---local smoothed = game.map{ name = "smoothed", side = 256, scale = 16 }
+---smoothed:fill(game.density(SURFACE), { y = 0.0, seed = 99 })
+---smoothed:blur(3)
+---land:combine(smoothed, "min")   -- valleys cut, ridges kept
+---```
+---
+---`y` is the plane the field is asked about, because a map is a surface and a
+---density is a volume and something has to say where they meet. For a field of
+---the usual shape — noise minus `y` — sampling at `y = 0` gives exactly the
+---height at which it changes sign. Defaults to 0.
+---
+---One evaluation per cell at the map's own resolution, in world coordinates,
+---so two maps of the same region with the same field and seed agree.
+---@param density Tiamot.Density
+---@param options { y: number?, seed: integer? }?
+function Map:fill(density, options) end
 
 ---One chunk's worth of heights, sampled from this map.
 ---

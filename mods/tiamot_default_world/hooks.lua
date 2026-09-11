@@ -51,9 +51,32 @@ function tdw.on_random_tick(material, fn)
     list[#list + 1] = fn
 end
 
+-- Completed digs, for anything that wants a say: the first non-nil answer
+-- is the mod's answer (the engine's ladder: false, a reason, or "" to
+-- cancel quietly having handled it yourself).
+local digs = {}
+function tdw.on_dig_complete(fn)
+    digs[#digs + 1] = fn
+end
+game.register_on_dig_complete(function(event)
+    for _, fn in ipairs(digs) do
+        local answer = fn(event)
+        if answer ~= nil then
+            return answer
+        end
+    end
+end)
+
+-- Each subscriber under a pcall so a failure is LOGGED with its message:
+-- the engine disables the mod on a tick error and says only that it
+-- happened. The error is re-raised, so the outcome is the engine's.
 game.register_on_tick(function(dt_ticks)
     for _, fn in ipairs(ticks) do
-        fn(dt_ticks)
+        local ok, err = pcall(fn, dt_ticks)
+        if not ok then
+            game.log("tiamot_default_world: tick failed: " .. tostring(err))
+            error(err, 0)
+        end
     end
 end)
 

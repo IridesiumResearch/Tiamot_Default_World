@@ -60,6 +60,21 @@ Shares `grass`, `dirt` (its soil), `tall_grass` and `granite` (the erratics).
 | Block | Where | Why |
 |---|---|---|
 | `packed_dirt` | game trails winding through the grass; bared ridge crests | the biome's one new block, named in the brief |
+| `rose_bush` | rounded thorny bushes in loose groups on the turf; billboard, sways | asked for by name 2026-09-11 ("Rose Bushes"); for reuse |
+| `rose_blooms` | a few red cells over a bush's top; picked, they turn to bush and grow back | asked for 2026-09-11 with the bush: a second material because a texture is one colour and the blooms are red |
+| `rose` (item) | what picking gives, one or two; carried, never placed | asked for 2026-09-11 with the bush |
+
+## 1.3 Alpine Highlands
+
+Shares `granite` (the skin), `dirt` (thin patches) and `creek_bed` (as
+gravel drifts on the risers — a rename to `gravel` is the day it is used
+somewhere that is not wet).
+
+| Block | Where | Why |
+|---|---|---|
+| `slate` | seams through the granite, a quarter of the rock | asked for by name 2026-09-11 |
+| `permafrost` | patches of frozen ground off the steep faces | asked for by name 2026-09-11 |
+| `snow` | a windswept crust one cell thick on the flats; a cover | asked for by name 2026-09-11 |
 
 Nine before the rule, two added under it (both asked for by name). The
 open question is `birch_leaves`: a birch canopy in oak green is wrong up

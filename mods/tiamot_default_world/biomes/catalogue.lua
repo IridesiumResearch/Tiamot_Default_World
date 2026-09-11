@@ -22,7 +22,7 @@ biome{ id = "temperate_woodlands", name = "Temperate Woodlands", area = "surface
 biome{ id = "rolling_grasslands", name = "Rolling Grasslands", area = "surface",
     ring = "temperate", humidity = { -0.42, -0.05 }, note = "The dry half of the temperate ring." }
 biome{ id = "alpine_highlands", name = "Alpine Highlands", area = "surface",
-    ring = "frost", note = "Mountain form: also anywhere more than ~1.2 km above the base dome." }
+    ring = "frost", humidity = { -0.42, -0.05 }, note = "1.3 — the frost ring's dry half; the mountain form (anywhere more than ~1.2 km up) is still to come." }
 biome{ id = "coastal_cliffs", name = "Coastal Cliffs", area = "surface",
     ring = "shore", note = "Steep stretches of the Long Shore." }
 biome{ id = "sandy_shores", name = "Sandy Shores", area = "surface",

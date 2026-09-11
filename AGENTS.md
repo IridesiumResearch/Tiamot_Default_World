@@ -175,6 +175,63 @@ reads it back. **There is no `erode` and there will not be one** — what erosio
 looks like is an opinion about what a landscape is, and that is yours. Blur and
 `combine("min")` are the primitives it is built from.
 
+**A map and a density field feed each other, which is what makes erosion work
+on terrain a heightmap cannot describe.** `map:fill(density)` reads a surface
+into a field; `{ op = "map" }` reads a field back into a surface. Without both
+you can erode a heightmap and nothing else — a world with a dome, overhangs or
+caves could compute an eroded field and have no way to use it:
+
+```lua
+game.register_on_world_init(function()
+    local land = game.map{ name = "land", side = 256, scale = 16 }
+    land:fill(game.density(SURFACE), { y = 0.0, seed = 99 })   -- surface -> field
+    local worn = game.map{ name = "worn", side = 256, scale = 16 }
+    worn:fill(game.density(SURFACE), { y = 0.0, seed = 99 })
+    worn:blur(3)
+    land:combine(worn, "min")
+end)
+
+game.register_on_generate(function(buf, pos)
+    local eroded = game.density{                               -- field -> surface
+        op = "sub",
+        a = { op = "map", map = game.map{ name = "land", side = 256, scale = 16 } },
+        b = { op = "y" },
+    }
+    buf:fill_density(eroded, stone)
+end)
+```
+
+`y = 0` is where a field of the form `noise - y` changes sign, so that is its
+height. The `map` node takes a COPY of the map as it is when `game.density` is
+called — a program reading a live map would generate different terrain after
+your next `blur`, and the seam between the two would be permanent and invisible.
+
+**A field says what it cannot be, and the engine skips the rest.** Before every
+`fill_density` the engine asks your program what values it could possibly take
+over that chunk, and generates nothing at all where the surface cannot reach.
+You pay nothing for this and need not call anything. `density:bounds(pos)` is
+the same answer, for skipping work of your own:
+
+```lua
+if surface:bounds(pos).all_empty then return end     -- nothing here but sky
+```
+
+**How much it can skip is set by your field, not by the engine.** The surface
+sits where your noise balances your height term, so the band that cannot be
+decided is the noise amplitude divided by that term's coefficient. Measured
+over a streamed column: `noise(11) - y` has **88%** of its chunks decided
+outright and runs four times faster; `noise(40) - y * 0.08` is 500 blocks of
+real relief, and none of it can be decided. If you want the skipping, keep your
+relief small against your view distance — and note that dividing the height
+term down is the same thing as scaling the relief up.
+
+**Do not write your own version of this by sampling the corners.** Nine samples
+over a chunk are not a bound: noise between two samples is not bounded by those
+samples, so a chunk whose corners agree can still contain surface, and skipping
+it leaves a hole. It fails exactly where feature size drops below sample
+spacing, which is to say at your caves and your ore, while a gentle heightmap
+survives it — so "I tried it and it looked fine" is not evidence.
+
 **Water is placed at generation or not at all.** The fluid solver conserves
 volume — it moves what exists and creates nothing — so there are no sources and
 nothing pours a sea into being later:
@@ -200,6 +257,189 @@ A mod never reads a key. It declares an action with `game.register_action` and
 responds to `register_on_action`; the player binds it in the settings screen.
 There is no key code anywhere in the mod API, and asking for one is asking for
 the wrong thing.
+
+---
+
+## Your mod's own options
+
+Do not write a config file the player will never find. Declare what you offer
+and the client draws it under your mod's name, in the screen they already open:
+
+```lua
+game.register_setting{ id = "nameplates", name = "Show name tags", default = 1 }
+game.register_setting{
+    id = "difficulty",
+    name = "How hard the mimics hit",
+    options = { "gentle", "ordinary", "unfair" },
+    default = 1,
+}
+
+-- and where it matters:
+if game.setting(uuid, "my_mod:difficulty") == "unfair" then ... end
+```
+
+No `options` is a checkbox; with them it is a dropdown. `game.setting` answers
+a boolean or the chosen STRING — never the raw index — so comparing against
+`"unfair"` keeps working when you insert an option above it, and it answers your
+declared default for a player who has never touched it.
+
+**Answers belong to the world, not to the machine.** A player's choices are
+remembered per world and per server, so they are still there when they come
+back to that server and do not follow them into the next one. That is the same
+rule the mod selection follows and for the same reason.
+
+**An answer arrives with a PLAYER, so a setting cannot shape a world.** Worldgen
+has already happened by the time anybody joins — for chunks made before the
+first player, it happened with nobody to ask. A setting cannot decide how your
+terrain is generated, and one that tried would give a world whose shape depended
+on who logged in first. **Options that shape a world are yours to configure**,
+read when your mod loads, and the engine deliberately offers no way to put them
+on a player's screen.
+
+Key on the UUID, never the display name (charter rule 13).
+
+---
+
+## Terrain that does not look like a texture
+
+Two things, and they are separate mechanisms because they fix different halves
+of "it looks artificial".
+
+**Shape: sub-node terrain.** `fill_density` takes a resolution:
+
+```lua
+buf:fill_density(field, stone, { detail = "smooth" })   -- no block staircases
+buf:fill_density(field, stone, { detail = "sampled" })  -- and fine detail
+```
+
+Do NOT reach for `set_subnode` to do this. It writes one cell, and a chunk is
+110,592 of them — the whole point of the option above is that the 27x sample
+cost happens inside the engine, on the blocks the surface actually crosses.
+Measured per chunk on terrain with caves: 729 us at block resolution, 1.08 ms
+smooth, 3.98 ms sampled. `set_subnode` is for the handful of cells you place
+deliberately, not for terrain.
+
+**What that costs the server, and what the engine does about it.** Your
+generator runs on the simulation thread, and the tick is 50 ms shared by
+everything (charter rule 18). The engine will spend at most **half of it**
+serving chunks — generating, lighting and sending them — and whatever does not
+fit waits for the next tick. So an expensive generator does not make the world
+stutter; it makes the world arrive more slowly, which is the trade worth having
+and the one you can see coming.
+
+The arithmetic is yours to do: at 3.98 ms a chunk, sampled detail fills about
+six chunks a tick, and `smooth` at 1.08 ms fills nearly four times as many. A
+player at view distance 24 is asking for tens of thousands of chunks, so that
+ratio is minutes of waiting rather than a detail. Pick `sampled` where the
+surface is worth it and `smooth` where it is not — they can be different fills
+in the same generator.
+
+If a server does run over its budget it says so, and it names your share:
+
+```
+a tick ran over its budget — 74.5ms total: serving 45.6ms, save chunks 28.7ms
+  — serving 1 chunks, 1 summaries, 10 deferred; gen 45.1ms, light 0.5ms
+```
+
+`gen` is your generator. `light` is the engine lighting what you generated.
+`deferred` is what the budget held back, which is the number that tells you the
+server is keeping up with the tick but not with the player.
+
+**Colour: a tint field.** Declare it on the block and the client does the rest:
+
+```lua
+game.register_block{
+    id = "grass",
+    tint = { strength = 0.12, low = {0.85, 1.0, 0.8}, high = {1.0, 0.95, 0.85}, scale = 40 },
+}
+```
+
+`strength` alone gives tone variation, which is most of what stops a surface
+reading as tiling; `low`/`high` add a hue shift across the same field. One field
+for every material, keyed on world position, so a hillside varies as a hillside
+rather than each block type drifting on its own. It costs nothing for materials
+that declare nothing.
+
+---
+
+## Interfaces: what a mod can and cannot do to the look
+
+**Pictures.** `{ type = "image", hash = ... }` in a dialog tree, and
+`style.nine_slice` on any widget. Both take a content hash — the same hash the
+material table and the sound table use — and the client fetches, decodes and
+draws them. A picture that has not arrived yet draws nothing and fills in when
+it lands, so do not design around it being there on the first frame.
+
+A **nine-slice's border is a third of the image**, both ways. Draw your frame so
+its corners are the outer third and they will keep their size at any box size
+while the edges stretch; that is the whole point of a nine-slice and it is why
+there is no border argument to get wrong.
+
+Pictures may be up to **2048 pixels on an edge**, and no more than 8 MiB
+decoded — which at four bytes a pixel means about 1448² in practice. A frame at
+1254² is fine.
+
+**Scrolling.** `{ type = "scroll", children = { ... } }` gives its children
+their full height and clips them, and the wheel moves them when the pointer is
+inside. That is the answer to a dialog with more in it than fits: put the long
+part in a scroll box rather than shrinking the controls, and the controls keep
+the size you asked for.
+
+**Slot counts scale with the slot**, so a bigger `item_slot` gets bigger
+numbers. You do not set the font.
+
+**Fonts.** Register one and name it in a style:
+
+```lua
+game.register_font{ id = "display", file = "fonts/display.ttf" }
+-- ...then on any widget that has text:
+{ type = "label", text = "Chapter One", font = "my_mod:display", text_size = 24 }
+```
+
+Up to **eight fonts per server** and **2 MiB each** — the count cap is about the
+client's glyph atlas rather than the files, because what costs is coverage, and
+a face with a full CJK range is orders of magnitude more atlas than a Latin one.
+
+A font a client cannot load, or a `font` naming one nothing registered, draws in
+the client's own face. A missing file is never a missing screen, so do not
+design a dialog that only makes sense in your typeface.
+
+**Ship a font you have the right to ship.** The engine carries no opinion about
+your licence and no way to check one; a font in your mod directory is published
+with your mod.
+
+---
+
+## Machines: containers a mod can fill
+
+A chest is a container a player drags things into. A **furnace** is one your mod
+fills itself, on a tick, whether or not anybody is looking — and that is the
+same mechanism with two more calls:
+
+```lua
+local FURNACE = "my_mod:furnace:" .. x .. "," .. y .. "," .. z
+game.make_container(FURNACE, 3)                 -- fuel, input, output
+
+game.register_on_tick(function()
+    local ore = game.container_take(FURNACE, { material = "my_mod:ore", count = 1, slot = 2 })
+    if ore > 0 then
+        game.container_give(FURNACE, { material = "my_mod:ingot", units = ore, slot = 3 })
+    end
+end)
+```
+
+- **Slots are one-based and worth naming.** `slot = 2` is the input; without it,
+  `container_take` would happily consume the ingots sitting in the output.
+  `game.container(name)` gives each stack its `slot` back, and leaves empty ones
+  out — so `#` counts what is in there, not how big it is.
+- **Both answer in UNITS, not true or false.** A container is a fixed size, so a
+  partial fit is ordinary: what did not fit was never taken from you. 27 units
+  to a block (charter rule 5).
+- **They work while a player has it open.** An open container lives in that
+  player's own inventory, and the engine writes into the slots they are looking
+  at, so a machine does not stop while its owner watches it.
+- **One callback per hook per mod.** Two `register_on_tick` calls is an error,
+  not a merge — put your machines in one tick function.
 
 ---
 
@@ -265,6 +505,23 @@ end)
 Reading terrain to decide where ore may go is the same shape: bounded, and
 proportional to what you place rather than to the volume you place it in.
 
+**Decoration that embeds needs the merge write.** A masked `game.set_block`
+REPLACES the block — the cells your mask does not name become air — which is
+right for something growing into open air and wrong for a rock or a root going
+into ground: it ends up standing in a footprint of its own bounding block.
+
+```lua
+game.set_block(pos, "my_mod:rock", cells, { merge = true })  -- keeps the turf
+game.set_block(pos, "my_mod:rock", cells)                    -- clears the rest
+```
+
+A named cell is taken whatever was in it; merging is about the cells you did
+NOT name. During generation the buffer already works this way — `set_subnode`
+writes one cell and leaves the other twenty-six — so this is the runtime half
+of the same rule (Sub-Node Contract §7.4). Merging into a block holding a
+different material sends one edit per named cell, which is what it costs to add
+a material to a block without erasing the first.
+
 **Glass is a flag, not a shader.** `register_block{ transparent = true }` and
 the block's own texture alpha decides how see-through it is. That one flag
 changes three things and leaves the rest alone (Sub-Node Contract §8.1):
@@ -291,6 +548,92 @@ another at an angle are not sorted against each other, which is a deliberate
 trade: sorting per quad is per-frame work proportional to the geometry. And only
 a WHOLE block of one transparent material passes light — a chiselled or mixed
 block holding glass falls back to the ordinary cell rule.
+
+**Leaves are NOT glass — use `cutout`.** This is the one to get right, because
+picking the wrong flag gives an artefact rather than a preference:
+
+```lua
+game.register_block{
+    id = "leaves",
+    cutout = true,                             -- see-through in PLACES
+    textures = { all = "textures/leaves.png" },
+}
+```
+
+`transparent` is see-through EVERYWHERE and hides the face between two panes,
+so a window does not double up. Foliage needs the opposite: the faces between
+two leaf blocks are kept, because those are the leaves you see through the gaps
+in the leaves in front of them. Declared `transparent`, a canopy becomes a
+hollow shell and its alpha holes look straight through the world at the sky —
+which is exactly what it is, since the sky is the frame's clear colour with
+nothing drawn over it.
+
+Cutout is drawn alpha-tested with the opaque world, so it writes depth,
+occludes itself correctly at every angle, and the sorting limit above does not
+apply to it. Light passes as it does through glass — dappled shade is not
+expressible, because permeability is yes or no. Collision does not change:
+leaves are solid, and whether a player may walk through them is your mod's
+opinion to implement.
+
+A block is one or the other. Declaring both is refused at registration rather
+than silently resolved.
+
+**Plants want `passable = true` as well.** Every block collided until this
+existed, so a two-cell fern was a lip the player stepped up and foliage had to
+be shaped around the engine — tufts one cell tall, clumps with gaps. A passable
+material stops nothing:
+
+```lua
+game.register_block{ id = "grass", cutout = true, passable = true }
+```
+
+**Collision only.** The cell still meshes, is still lit, still holds fluid out,
+and a ray still stops at it — which is deliberate and is what lets a player aim
+at a tuft and break it. A material that reported itself hollow everywhere would
+be one nobody could pick.
+
+**Grass is `billboard = true`, not a card of cells.** Building a sprite card out
+of cells does not work here and it is worth knowing why, because the geometry
+looks like it should: a texture repeats once per BLOCK, so a face one cell
+across shows a ninth of the tile — a crop, not a sprite — and a cell is a cube,
+so a tuft made of them reads as a little floating box. That is what "sprite
+cards are not really a thing" means, and it is correct.
+
+```lua
+game.register_block{
+    id = "grass",
+    billboard = true,   -- drawn as a camera-facing sprite, not as geometry
+    passable = true,
+    sway = true,
+}
+```
+
+A RUN of cells in a column is ONE sprite as tall as the run — one cell is a
+third of a yard, three is a yard — so you control a plant's size by how many
+cells you place, and you never get the same texture stacked on top of itself.
+It turns about the vertical axis only, so it never lies over when a player looks
+down at it, and the cells stay exactly where they are for collision, light,
+fluid and the dig ray. Only the drawing changes.
+
+**And `sway = true` makes it move.**
+
+```lua
+game.register_block{ id = "grass", cutout = true, passable = true, sway = true }
+```
+
+Presentation only: the world does not know the grass is moving, so collision,
+lighting and the server's idea of where anything is are untouched, and two
+clients at different frame rates disagree about where a leaf is without
+disagreeing about anything that matters.
+
+**It bends rather than slides**, because the mesher marks the top edge of each
+face and the shader moves only those vertices — greedy meshing spans a plant's
+whole height in one quad, so the base staying put gives a linear bend from base
+to tip. The motion is the engine's own noise over world position and time, so a
+field leans in gusts instead of every plant buzzing on its own.
+
+There is no amplitude to set. What a plant looks like is its texture's business
+and its shape's; a knob beside them is a third thing to get wrong.
 
 **Erosion, rivers and biome blending are compositions**, not engine features.
 Build them from `game.density`'s arithmetic. If a shape genuinely cannot be

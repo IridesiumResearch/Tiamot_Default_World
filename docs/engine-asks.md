@@ -16,7 +16,112 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
-## 12. Bounds of a noise node over a box (2026-09-11)
+## 17. The world cannot be read inside a dig or place hook (2026-09-11)
+
+**Seen.** `game.get_block` returns nil from inside `register_on_dig_complete`
+for the very block being dug, with the player standing on it. The block
+reader answers through the sight lease (`mlua_vm.rs`, `block_reader`),
+which is held only while the tick runs the mods' own callbacks; the dig
+hook is asked from the dig path, where the lease is `None` and every
+reading is `Unavailable`.
+
+**Why it matters.** A hook that decides by what the block HOLDS — blooms
+on a bush, a lock on a door, a nest with eggs — cannot look, and the
+event carries one material of a block that may hold three. The mod
+decides on the event's material and reads the block a tick later, which
+means cancelling a dig it may then find had nothing to pick.
+
+**Ask.** Hold the sight lease across the cancellable hooks, or hand the
+dig hook the block's cells. Reads are the only thing wanted; a write from
+a veto hook is already refused, and can stay refused.
+
+## 16. A right-click on a block (2026-09-11)
+
+**Wanted.** Picking roses: right-click a bush and it gives a rose or two
+and loses its blooms for a while. Right-click is the natural verb for
+"use what is in front of you" and the designer asked for it by name.
+
+**Why the mod cannot do it.** Right-click is the place control, and a
+placement exists only when the player carries a placeable material:
+with an empty hand the client sends nothing, and `register_on_place`
+never fires. `register_on_punch` is entities; `register_on_action` has
+no target. The mod picks on a DIG for now — a completed dig on a bush
+with blooms is cancelled with `""` and handled — which is the same idiom
+`tiamot_default_life` forages berries with, but it is not the verb asked
+for, and a pick that takes a dig's countdown is slow.
+
+**Ask.** `game.register_on_use(callback)`: fired when the place control
+lands on a block and no placement is possible (empty hand, or an item in
+it), with `{ player, x, y, z (the cell), material, held }`, before
+anything else; the same return ladder as the other hooks, `""` meaning
+handled. The client already knows the cell under the crosshair — it is
+what it would step across for a placement — so it is one message with
+the target and nothing to place.
+
+## 15. A cover fill (2026-09-11) — LANDED (engine ffac6e0)
+
+**Wanted.** Grass that stands on the surface, is at most two cells tall,
+and never crosses into the block above — the designer's "no stacking":
+a tuft that is two blocks highlights and digs as two things.
+
+**Why the mod cannot do it.** A field has no notion of the block a
+sample is in (there is no `floor`), and even with one it would not
+help: the engine samples a block at its bottom corner, so a run confined
+to a block contains the block's one sample point in a third of columns,
+and the sampled fill's surface-shell test — built from those samples —
+would miss the rest in stripes along the contours. Only the buffer knows
+where its surfaces are.
+
+**Landed.** `buf:fill_cover(material, { cells = n, take = density })`:
+for every empty cell on an occupied one, where `take` is positive there,
+a run of up to `cells` cells inside that block, never overwriting a
+cell, never standing on a run it wrote. `take` is evaluated at cell
+resolution only in blocks that hold a surface. Two tests in `buffer.rs`;
+the stub documents it. The tufts are now a `cover` entry in each biome's
+fill list, run after every biome's fills, with a take field of the tuft
+noise and a term keeping it within a sixth of a block of the ground, so
+cave floors get none. The mod's sampled fill and its per-cell band are
+gone with it: cheaper, and exact.
+
+## 14. Sprites are never drawn in play (2026-09-11) — FIXED (engine ffac6e0)
+
+**Seen.** With `cutout` off a billboard, its cells were there — aimed at,
+highlighted, dug, dropped — and nothing was drawn. In a scratch world on
+this machine the same: the crosshair names `tall_grass`, the cell box is
+drawn round nothing.
+
+**Why.** `mesher::mesh` lights the grid's sprites and attaches them to
+the mesh; `MeshJob::finish` — the incremental path `App::drive` runs for
+every chunk in play — returned `scratch.finish` alone. Every sprite was
+found, taken out of the geometry (§8.4) and never uploaded. The billboard
+screenshot test passes because it meshes through `mesh`; it has passed
+here on the RTX 5070 Ti over Vulkan, so the drawing itself is sound.
+
+**Fix, applied in the engine tree.** `MeshJob::finish(self, light)`
+attaches the sprites through the same `lit_billboards` helper `mesh`
+now uses; `App::drive` passes the light it already has; a mesher test
+asserts a stepped job carries the same sprites as a one-shot mesh.
+Uncommitted, beside the file-mode noise already in that tree.
+
+## 13. A billboard that is also cutout is drawn as cubes (2026-09-11)
+
+**Seen.** Grass declared `cutout = true, billboard = true` was drawn as
+cutout CUBES — cell faces showing ninths of the blade tile — with the
+sprite lost inside them. In `mesher.rs` (`emit` for one axis) the opaque
+set is `solid & !panes & !leaves & !sprites`, as the comment beside it
+says ("taken out of every set here"), but `leaves` is the cutout column
+as it came and its faces are emitted from that, sprites included.
+
+**Fixed in the mod** by not declaring `cutout` on a billboard: the sprite
+pass alpha-tests with `fragment_cutout` on its own, nothing in core reads
+the flag, and the client reads it only to build the foliage set.
+
+**Ask.** Either `let leaves = cutout & !sprites` (one line, and the
+comment already promises it), or refuse the pair at registration the way
+`transparent` and `cutout` are refused together — a billboard has no cube
+faces for a culling rule to apply to.
+
+## 12. Bounds of a noise node over a box (2026-09-11) — LANDED (engine ffac6e0); the mod's gate reads it through `Density:bounds` as before
 
 **Wanted.** Two biomes share the temperate ring, split by a slow humidity
 noise (period nine kilometres). A chunk is almost always wholly on one
@@ -51,7 +156,7 @@ hook has no way to put its units into the world as a pickup.
 **Ask.** `game.drop(position, { material = "mod:block", units = 27 })`: the
 same pickup a dig makes, spawned at a position, owned by nobody.
 
-## 10. A per-biome hue (2026-09-11)
+## 10. A per-biome hue (2026-09-11) — LANDED as `game.register_chunk_tint` (engine 33dd9df); not yet used by the mod
 
 **Wanted.** The designer wants each biome to carry its own cast: drier
 biomes a little less saturated and browner, wetter ones bluer-green,
@@ -66,17 +171,43 @@ multiplied into the albedo beside the material's own `tint`. A biome's hue
 is then one line in its file, and the boundary between two biomes is a
 smooth sixteen-block blend rather than a seam. Three bytes a chunk.
 
-## 9. Crossed cards (2026-09-11)
+## 9. Fixed cards (2026-09-11) — LANDED as `billboard = "cross"`, engine tree, uncommitted
 
-**Wanted.** Grass, lady's mantle and brambles as the X of two crossed
-quads Minecraft and Minetest draw, rather than a single card turning to
-face the camera. From the window a turning card reads as a sprite; the X
-reads as a plant, and it does not swivel as the player walks round it.
+*Landed as the crossed form after all: the designer asked for the X of
+Minecraft and Minetest by name (2026-09-11, later), two fixed cards on the
+diagonals of the run's column, drawn as two instances at fixed headings
+in the same sprite path. The parser now refuses a `billboard` that is not
+true, false or "cross" instead of reading it as false. The hashed
+single-heading form below is not needed; kept for the record.*
 
-**Ask.** `billboard = "cross"` beside the present `true`: the same run of
-cells drawn as two fixed quads on the diagonals of the run's column, the
-whole tile across each, the top edge swaying as now. No new state — the
-mesher already finds the run; only the vertex stage differs.
+**Wanted.** Grass as vertical standing cards: one or two a block, each on
+its own cell, each standing at its OWN angle and staying there — not
+turning to face the camera. The designer's reference is a block of thin
+blades fanned at all headings; from the window the present sprite reads
+as a sticker that swivels as the player walks round it, and a field of
+them is a wall of parallel cards. The X of two crossed quads (the first
+form of this ask) is the fixed-heading look with two headings; one card
+at a hashed heading is the same look with as many headings as cells, and
+half the quads.
+
+**Why the mod cannot do it.** A billboard's heading is the camera's,
+built in the vertex stage from `camera_right`; nothing a mod declares
+reaches that. The mod does its half already: one or two cells a block
+chosen by a noise with features under a block (so neighbouring columns
+decide nearly on their own), one or two cells tall and inside one block
+(item 15), a tile of five one-pixel blades.
+
+**Ask.** `billboard = "fixed"` beside the present `true`: a sprite of that
+material is built from a heading HASHED from the cell's world position
+(any hash — this is presentation, on the client, and no simulation reads
+it) instead of the camera's right, and the same hash slides its base up
+to a sixth of a block each way within its own cell's footprint, so the
+cards do not stand on a three-by-three grid. Everything else as
+now: one instance per run, square, the whole tile across it, both sides
+drawn (the pipeline already culls nothing), lit at its foot, the top edge
+swaying. The heading can travel in `world.w` and the slide in `anchor.xyz`
+of the existing instance; the material's mode is one more byte on
+`MaterialDef` beside `billboard`.
 
 ## 8. Sprite cards for grass, placed by the cell (2026-09-10) — LANDED as `billboard` and `sway`; grass, flowers and leaves use them
 

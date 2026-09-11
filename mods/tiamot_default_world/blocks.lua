@@ -62,23 +62,51 @@ block("granite", "Granite", "Weathered, grey, speckled.", { hardness = 2.0, tint
 block("oak_log", "Oak log", "Trunk of a temperate oak.", { hardness = 1.0, tint = SOIL })
 block("birch_log", "Birch log", "Pale, papery bark.", { hardness = 0.9, tint = ROCK })
 block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = ROCK })
+-- Alpine highlands (1.3), asked for by name: slate seams in the granite,
+-- permafrost in patches, and snow as a crust one cell thick (a cover).
+block("slate", "Slate", "Dark, layered, splits in sheets.", { hardness = 1.4, tint = ROCK })
+block("permafrost", "Permafrost", "Ground frozen hard, grey-brown.", { hardness = 0.9, tint = SOIL })
+block("snow", "Packed snow", "A windswept crust.", { hardness = 0.2, tint = ROCK })
 
 -- Ground cover. Cells, not blocks: a fern is two cell layers of a block, a
 -- tuft of grass one to three, a bramble a tangle of cells over a few
 -- blocks. Ferns and grass are `passable` — a body walks through them, and
 -- a ray still stops at them so they can be broken; brambles are meant to
--- be walked round, so they are not. Grass and the flowers are `billboard`:
--- a run of cells in a column is drawn as ONE camera-facing sprite as tall
--- as the run, the cells kept for everything else. Ferns stay geometry, in
--- the round-dot look. Everything soft sways.
+-- be walked round, so they are not. Grass and the flowers are `billboard =
+-- "cross"`: a run of cells in a column is drawn as TWO fixed cards on the
+-- diagonals of its column, each as tall as the run and the whole tile
+-- across — the X Minecraft and Minetest draw, which holds still as the
+-- player walks round it (a turning card read as a sticker following you:
+-- engine-asks item 9, landed 2026-09-11). The cells are kept for
+-- everything else. **A billboard is NOT
+-- also `cutout`**: cutout is a rule for culling cube faces, a sprite has
+-- none, and the mesher takes billboard cells out of the opaque set but
+-- not out of the cutout set (engine-asks, item 13) — declared both, the
+-- grass was drawn as cutout cubes with the sprite lost inside them. The
+-- sprite pass alpha-tests on its own. Ferns stay geometry, in the
+-- round-dot look. Everything soft sways.
 block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true })
-block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true, billboard = true })
-block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, cutout = true, billboard = true })
+block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, passable = true, sway = true, billboard = "cross" })
+block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, billboard = "cross" })
 -- Lady's mantle: a low rosette of rounded leaves, and its bloom — sprays of
 -- tiny chartreuse flowers, its own colour, placed above a leaf cell so a
 -- patch reads as leaves with blooms rising from them.
-block("ladys_mantle", "Lady's mantle", "A rosette of scalloped leaves.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true, billboard = true })
-block("ladys_mantle_bloom", "Blooming lady's mantle", "Sprays of tiny chartreuse flowers.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true, billboard = true })
+block("ladys_mantle", "Lady's mantle", "A rosette of scalloped leaves.", { hardness = 0.1, tint = GREEN, passable = true, sway = true, billboard = "cross" })
+block("ladys_mantle_bloom", "Blooming lady's mantle", "Sprays of tiny chartreuse flowers.", { hardness = 0.1, tint = GREEN, passable = true, sway = true, billboard = "cross" })
+-- Rose bushes (grasslands, 2026-09-11). A bush is a rough ellipsoid of
+-- `rose_bush` cells with a few `rose_blooms` cells over its top: two
+-- materials in one block, because every texture is one colour (the blooms
+-- are red and the bush is not) and a run of billboard cells is one card
+-- per material, so the blooms read as red dots sitting on the leaves.
+-- Neither is passable — a bush is walked round. Picking is a dig on a bush
+-- that has blooms (the engine has no right-click hook yet: engine-asks,
+-- item 16): the bloom cells turn to bush, the player is given a rose or
+-- two, and the blooms come back after a while (`rolling_grasslands.lua`).
+block("rose_bush", "Rose bush", "A rounded thorny bush.", { hardness = 0.4, tint = GREEN, sway = true, billboard = "cross" })
+block("rose_blooms", "Roses", "Blooms on a rose bush. Pick them.", { hardness = 0.1, tint = GREEN, sway = true, billboard = "cross" })
+-- The rose itself is an ITEM: carried, never placed. Its texture is a
+-- picture, which is what an item is (the flat-colour rule is for the world).
+M.rose = game.register_item{ id = "rose", name = "Rose", description = "Picked from a bush.", texture = "textures/rose.png" }
 -- Cutout, not transparent: the OPPOSITE culling rule. Glass hides the face
 -- between two panes; foliage keeps the faces between two leaf blocks,
 -- because culled, a canopy is a hollow shell whose alpha holes look straight

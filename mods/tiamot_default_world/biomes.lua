@@ -60,7 +60,7 @@ end
 -- registration so the catalogue can list everything first and each biome's
 -- own file can build it later, in load order.
 ---@param id string
----@param build fun(ctx: table): table  -- returns { { field = Density, material = integer }, ... }
+---@param build fun(ctx: table): table  -- returns { { field = Density, material = integer } | { cover = integer, cells = integer, take = Density }, ... }
 function tdw.build_biome(id, build)
     local biome = tdw.biomes[id]
     assert(biome, "build_biome: no biome called " .. tostring(id))
@@ -72,12 +72,30 @@ function tdw.build_biome(id, build)
         -- the ring and humidity masks out of the fills.
         everywhere = tdw.config.everywhere == id,
     }
-    biome.fills = build(ctx)
-    assert(type(biome.fills) == "table", "build for " .. id .. " must return a list of fills")
-    for i, fill in ipairs(biome.fills) do
-        assert(fill.field and fill.material, "fill " .. i .. " of " .. id .. " needs field and material")
+    -- The same builder, run once per terrain mode the biome's fills are
+    -- needed in (shape.lua, "terrain MODES"): its own ring's mode for the
+    -- chunks wholly in its ring, and "all" for the band where rings meet —
+    -- a fill has the terrain inside it, and must carry the same terms the
+    -- chunk's surface was made from or it paints at the wrong height.
+    local function compile_fills(mode)
+        tdw.shape.terrain_mode = mode
+        local fills = build(ctx)
+        tdw.shape.terrain_mode = nil
+        assert(type(fills) == "table", "build for " .. id .. " must return a list of fills")
+        for i, fill in ipairs(fills) do
+            -- A fill paints where its field is positive; a cover stands a
+            -- run of cells on the surface the fills made, where its take is.
+            assert((fill.field and fill.material) or (fill.cover and fill.take),
+                "fill " .. i .. " of " .. id .. " needs field and material, or cover and take")
+        end
+        return fills
     end
-    game.log(string.format("tiamot_default_world biome %-24s built, %d fill(s)", id, #biome.fills))
+    local own = tdw.config.everywhere and tdw.shape.default_mode() or biome.ring_mode or "temperate"
+    biome.fills = compile_fills(own)
+    if not tdw.config.everywhere then
+        biome.fills_all = compile_fills("all")
+    end
+    game.log(string.format("tiamot_default_world biome %-24s built, %d fill(s), mode %s", id, #biome.fills, own))
 end
 
 -- A surface biome's placement mask for its fills: its ring, and its side
