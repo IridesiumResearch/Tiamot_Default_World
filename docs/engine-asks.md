@@ -16,6 +16,44 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
+## 11. An item dropped at a position (2026-09-11)
+
+**Wanted.** Water reaching a leaves block breaks it (`rules.lua`, on
+`register_on_fluid_flow`), and the designer wants what it was to DROP. A
+dig drops through the engine's own rule and a placement can be refused
+with the player keeping the material, but a mod that removes a block in a
+hook has no way to put its units into the world as a pickup.
+
+**Ask.** `game.drop(position, { material = "mod:block", units = 27 })`: the
+same pickup a dig makes, spawned at a position, owned by nobody.
+
+## 10. A per-biome hue (2026-09-11)
+
+**Wanted.** The designer wants each biome to carry its own cast: drier
+biomes a little less saturated and browner, wetter ones bluer-green,
+darker and richer. `tint` is per MATERIAL over one world field, so a grass
+block is the same green in every biome, and per-biome block variants would
+multiply the node list the designer keeps small.
+
+**Ask.** One colour per chunk from the generator — `buf:set_tint{ r, g, b }`
+(multipliers, default white) on the chunk buffer, carried in the chunk
+message, and on the client interpolated between chunk centres and
+multiplied into the albedo beside the material's own `tint`. A biome's hue
+is then one line in its file, and the boundary between two biomes is a
+smooth sixteen-block blend rather than a seam. Three bytes a chunk.
+
+## 9. Crossed cards (2026-09-11)
+
+**Wanted.** Grass, lady's mantle and brambles as the X of two crossed
+quads Minecraft and Minetest draw, rather than a single card turning to
+face the camera. From the window a turning card reads as a sprite; the X
+reads as a plant, and it does not swivel as the player walks round it.
+
+**Ask.** `billboard = "cross"` beside the present `true`: the same run of
+cells drawn as two fixed quads on the diagonals of the run's column, the
+whole tile across each, the top edge swaying as now. No new state — the
+mesher already finds the run; only the vertex stage differs.
+
 ## 8. Sprite cards for grass, placed by the cell (2026-09-10) — LANDED as `billboard` and `sway`; grass, flowers and leaves use them
 
 **Wanted.** Grass the way Minecraft and Minetest draw it — two crossed

@@ -58,7 +58,7 @@ local FERN_PATCH_MIN = 0.0     -- half the ground is fern country
 local FERN_FREQ = 1 / 4
 local FERN_MIN = 0.02          -- within it, a little under half the cells
 local TUFT_FREQ = 1 / 3
-local TUFT_MIN = 0.15          -- two or three of a block's nine cell columns, in clumps
+local TUFT_MIN = -0.05         -- most of a block's nine cell columns: a meadow, in clumps
 local TUFT_HEIGHT_FREQ = 1 / 2 -- a fine noise: how many cells tall each column's tuft is, two or three
 
 local TREE_CHANCE = 5          -- one grass block in this many is a candidate
@@ -90,7 +90,7 @@ local OAK = {
 -- small clump hugging it, and a crown taller than it is wide.
 local ASPEN = {
     log = "tiamot_default_world:birch_log", leaves = "tiamot_default_world:oak_leaves",
-    trunk = { 10, 5 },
+    trunk = { 14, 7 },             -- a third taller than the oak's tallest
     fork_one_in = 10,
     branches = { 3, 2 },
     branch_out = { 1, 0 },
@@ -126,7 +126,7 @@ local HOLLOW_ONE_IN = 3        -- one oak in this many has a hollow under its ro
 local RESERVE = 6
 
 local POOL_CHANCE = 1200       -- one grass block in this many: a vernal pool, tiny
-local POOL_R = 2               -- radius of the bank, blocks; water is one block down
+local POOL_R = 3               -- radius of the bank, blocks; water is one block down
 local POOL_APART = 18          -- no other water within this many blocks
 
 local STATS_EVERY = 200        -- ticks between log lines: ten seconds
@@ -289,7 +289,10 @@ end
 -- The mask of the cells of block (bx, by, bz) whose centres lie inside an
 -- ellipsoid centred at (cx, cy, cz) with half-widths (rx, ry, rz). Plain
 -- + - * / on doubles and comparisons: nothing here is a library call.
-local function ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz)
+-- `rough`, if given, nudges the edge per cell by up to that much either
+-- way, from the integer hash of the cell — so a clump of leaves is ragged
+-- at the cell rather than a clean sphere. Nothing here is a library call.
+local function ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz, rough)
     local mask = 0
     for iz = 0, 2 do
         local dz = (bz + (iz + 0.5) / 3 - cz) / rz
@@ -297,7 +300,11 @@ local function ellipsoid_mask(bx, by, bz, cx, cy, cz, rx, ry, rz)
             local dy = (by + (iy + 0.5) / 3 - cy) / ry
             for ix = 0, 2 do
                 local dx = (bx + (ix + 0.5) / 3 - cx) / rx
-                if dx * dx + dy * dy + dz * dz <= 1.0 then
+                local edge = 1.0
+                if rough then
+                    edge = 1.0 + rough * ((hash(bx * 3 + ix, by * 3 + iy, bz * 3 + iz) % 9) - 4) / 4
+                end
+                if dx * dx + dy * dy + dz * dz <= edge then
                     mask = mask | bit(ix, iy, iz)
                 end
             end
@@ -367,6 +374,30 @@ local function clear_for(x, y, z, height)
             if is_wood(at(x + d[1] * r, y + 2, z + d[2] * r)) then
                 stats.spacing = stats.spacing + 1
                 return false
+            end
+        end
+    end
+    return true
+end
+
+-- Whether every chunk a box touches is loaded. `at` is nil in one that is
+-- not, and an edit into one is DROPPED — which is how a tree came to stand
+-- cut in half at a chunk border: grown at the edge of the loaded world,
+-- its far half written into a chunk that was not there and generated
+-- fresh later. Sampled every eight blocks, finer than a chunk.
+local function loaded_box(x0, y0, z0, x1, y1, z1)
+    local function steps(a, b)
+        local out = {}
+        for v = a, b, 8 do out[#out + 1] = v end
+        out[#out + 1] = b
+        return out
+    end
+    for _, sx in ipairs(steps(x0, x1)) do
+        for _, sy in ipairs(steps(y0, y1)) do
+            for _, sz in ipairs(steps(z0, z1)) do
+                if at(sx, sy, sz) == nil then
+                    return false
+                end
             end
         end
     end
@@ -479,8 +510,8 @@ local function clump(leaf_masks, cx, cy, cz, r, flat, rng)
     for bz = math.floor(cz - rz), math.floor(cz + rz) do
         for by = math.floor(cy - ry), math.floor(cy + ry) do
             for bx = math.floor(cx - rx), math.floor(cx + rx) do
-                local scale = 0.85 + rng:below(6) / 20
-                local mask = ellipsoid_mask(bx, by, bz, cx, cy, cz, rx * scale, ry * scale, rz * scale)
+                local scale = 0.7 + rng:below(11) / 20                -- 0.7 .. 1.2, per block
+                local mask = ellipsoid_mask(bx, by, bz, cx, cy, cz, rx * scale, ry * scale, rz * scale, 0.35)
                 if mask ~= 0 then
                     local key = bx .. ":" .. by .. ":" .. bz
                     leaf_masks[key] = (leaf_masks[key] or 0) | mask
@@ -504,7 +535,7 @@ local function grow_tree(x, y, z, rng, species)
         return false
     end
     local base = footing(x, y, z)
-    if base == nil then
+    if base == nil or not loaded_box(x - 8, base - 2, z - 8, x + 8, y + height + 8, z + 8) then
         stats.unloaded = stats.unloaded + 1
         return false
     end
@@ -611,6 +642,10 @@ end
 -- A snag: a bare trunk, shorter than a living tree, with a stub or two of
 -- branch and a broken top — the top block holds only some of its cells.
 local function grow_snag(x, y, z, rng)
+    if not loaded_box(x - 8, y - 4, z - 8, x + 8, y + 16, z + 8) then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
     local height = 4 + rng:below(5)
     if not clear_for(x, y, z, height) then
         return false
@@ -663,6 +698,10 @@ end
 -- half sunk in the turf. Its far end drops with the ground if the ground
 -- drops.
 local function lay_log(x, y, z, rng)
+    if not loaded_box(x - 12, y - 4, z - 12, x + 12, y + 6, z + 12) then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
     if not edits.room() then
         stats.no_room = stats.no_room + 1
         return false
@@ -900,6 +939,11 @@ end
 -- bank is dug a block deeper there, so a pool sits in a gentle slope
 -- rather than only on the rare dead-level patch.
 --
+-- The bowl is lined on purpose: the blocks under the water become mud and
+-- the ring of blocks round it grass, all WHOLE, and a whole block has no
+-- capacity for fluid (Sub-Node Contract §4), so the pool cannot seep away
+-- whatever the turf was made of there.
+--
 -- Fluid here is a volume per block, drawn at volume/27, so the surface
 -- need not sit on a block boundary the way Minecraft's does: each pool is
 -- filled to its own level, fifteen to twenty-seven cells, so the water
@@ -969,15 +1013,19 @@ local function dig_pool(x, y, z)
             if d2 <= (POOL_R - 1) * (POOL_R - 1) then
                 edits.push({ x = x + dx, y = y, z = z + dz }, "engine:air")
                 edits.push({ x = x + dx, y = y - 1, z = z + dz }, "engine:air")
+                edits.push({ x = x + dx, y = y - 2, z = z + dz }, "tiamot_default_world:mud")
                 water[#water + 1] = { x = x + dx, y = y - 1, z = z + dz, volume = level }
             elseif d2 <= POOL_R * POOL_R then
-                -- The bank: the top two cell layers off, the bottom one kept.
+                -- The bank: the top two cell layers off, the bottom one kept,
+                -- and the wall of the bowl under it whole grass.
                 edits.push({ x = x + dx, y = y, z = z + dz }, "engine:air", TOP_LAYERS, true)
+                edits.push({ x = x + dx, y = y - 1, z = z + dz }, "tiamot_default_world:grass")
             end
         end
     end
-    if is_whole(at(x, y - 2, z)) then
+    if is_whole(at(x, y - 2, z)) and is_whole(at(x, y - 3, z)) then
         edits.push({ x = x, y = y - 2, z = z }, "engine:air")
+        edits.push({ x = x, y = y - 3, z = z }, "tiamot_default_world:mud")
         water[#water + 1] = { x = x, y = y - 2, z = z, volume = 27 }
     end
     if not edits.commit(RESERVE) then

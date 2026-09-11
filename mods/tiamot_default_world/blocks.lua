@@ -27,7 +27,7 @@ local STEP = { step = "core:step" }
 -- half this it read as texture rather than as ground changing across a hill.
 local ROCK = { strength = 0.20, scale = 128 }
 local SOIL = { strength = 0.28, scale = 96 }
-local GREEN = { strength = 0.32, scale = 192, low = { 0.82, 1.0, 0.72 }, high = { 1.0, 0.94, 0.80 } }
+local GREEN = { strength = 0.32, scale = 192, low = { 0.76, 1.0, 0.64 }, high = { 1.0, 0.92, 0.74 } }
 
 local function block(id, name, description, extra)
     local spec = {
@@ -54,6 +54,7 @@ block("dirt", "Dirt", "Ground with no biome claim on it yet.", { hardness = 0.5,
 block("grass", "Grass", "Temperate turf.", { hardness = 0.5, tint = GREEN })
 block("loam", "Loam", "Deep, dark woodland soil.", { hardness = 0.5, tint = SOIL })
 block("leaf_litter", "Leaf litter", "Last year's leaves, packed brown.", { hardness = 0.3, tint = SOIL })
+block("mud", "Mud", "The floor of a pool.", { hardness = 0.4, tint = SOIL })
 block("creek_bed", "Creek bed", "Wet gravel along a seasonal creek.", { hardness = 0.6, tint = ROCK })
 block("limestone", "Limestone", "Weathered, pale, soft-edged.", { hardness = 1.2, tint = ROCK })
 block("granite", "Granite", "Weathered, grey, speckled.", { hardness = 2.0, tint = ROCK })
@@ -71,7 +72,7 @@ block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = RO
 -- the round-dot look. Everything soft sways.
 block("fern", "Fern", "Knee-high, in carpets.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true })
 block("tall_grass", "Tall grass", "Tufts of it.", { hardness = 0.1, tint = GREEN, cutout = true, passable = true, sway = true, billboard = true })
-block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, cutout = true })
+block("bramble", "Bramble", "Wild berry canes, tangled.", { hardness = 0.3, tint = GREEN, cutout = true, billboard = true })
 -- Lady's mantle: a low rosette of rounded leaves, and its bloom — sprays of
 -- tiny chartreuse flowers, its own colour, placed above a leaf cell so a
 -- patch reads as leaves with blooms rising from them.

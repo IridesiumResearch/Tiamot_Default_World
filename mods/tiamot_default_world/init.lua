@@ -45,6 +45,7 @@ load("biomes.catalogue")   -- every area and every biome, as data
 load("biomes.temperate_woodlands")   -- 1.1, the first one built
 load("generate")
 load("player")
+load("rules")             -- leaves and water, and other rules of the whole world
 
 game.log(string.format("tiamot_default_world ready: %d areas, %d biomes (%d built)",
     #tdw.area_list, #tdw.biome_list, tdw.built_count()))

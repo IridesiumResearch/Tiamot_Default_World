@@ -34,7 +34,7 @@ The engine reads one mods directory (`mods_path`, default `game/`). Point the
 engine at this mod with a directory junction so edits here are live:
 
 ```
-mklink /J <engine>\game	iamot_default_world <this repo>\mods	iamot_default_world
+mklink /J <engine>\game\tiamot_default_world <this repo>\mods\tiamot_default_world
 ```
 
 Then, in the launcher, create a world with **Spindle** enabled and
@@ -155,9 +155,11 @@ built one at a time in its own file. Built so far:
       limestone or granite from the shared `rocks.lua`, woody root nodes,
       bramble tangles in patches, lady's mantle in patches and round dead
       wood, a hollow dug under the roots of one oak in three with the root
-      arching over it, and tiny vernal pools, grass-sided and soil-floored,
-      each filled to its own level a cell or a few below the lip (fluid is
-      a volume per block here, so a surface need not sit on a block edge). The grass tick logs its counts every ten seconds and
+      arching over it, and vernal pools lined with whole grass walls and a
+      mud floor so they hold, each filled to its own level a cell or a few
+      below the lip (fluid is a volume per block here, so a surface need not
+      sit on a block edge). Leaves placed in or against water are refused,
+      and water reaching leaves breaks them (`rules.lua`). The grass tick logs its counts every ten seconds and
       on `stats` in chat.
 
 ## Licence

@@ -47,13 +47,11 @@ item 5). A textured material is a decision the designer makes by name.
 | `dead_wood` | standing snags and fallen trunks | asked for 2026-09-09 |
 | `fern` | knee-high carpets, two cells tall, in clumps; blocky fronds | asked for 2026-09-10; for reuse |
 | `tall_grass` | tufts two or three cells tall, where the ferns are not; a sprite as tall as the run | asked for 2026-09-10; for reuse |
-| `bramble` | wild berry tangles, walked round | asked for 2026-09-10; for reuse |
+| `bramble` | wild berry tangles, walked round; drawn as sprites | asked for 2026-09-10; for reuse |
 | `ladys_mantle` | rosettes two cells tall in patches, thicker round dead wood; billboard, sways | asked for 2026-09-10; for reuse |
 | `ladys_mantle_bloom` | chartreuse sprays two cells tall rising from a rosette; its own single colour | asked for 2026-09-10; for reuse |
 
-The vernal pools' "mud" is `loam`: the turf is three blocks thick and a
-pool's bowl is dug through it, so its sides are grass and its floor soil
-without a block placed for either. Say `mud` if it should be its own.
+| `mud` | the floor of a vernal pool, under the water; its walls are whole `grass` | asked for 2026-09-11 |
 
 Nine before the rule, two added under it (both asked for by name). The
 open question is `birch_leaves`: a birch canopy in oak green is wrong up
