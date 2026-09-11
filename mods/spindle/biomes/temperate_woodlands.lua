@@ -899,6 +899,20 @@ end
 -- first. "Flat" allows a column of the rim to be one block HIGHER — the
 -- bank is dug a block deeper there, so a pool sits in a gentle slope
 -- rather than only on the rare dead-level patch.
+--
+-- Fluid here is a volume per block, drawn at volume/27, so the surface
+-- need not sit on a block boundary the way Minecraft's does: each pool is
+-- filled to its own level, fifteen to twenty-seven cells, so the water
+-- stands a cell or a few below the bank's lip. The bank ring is dug at the
+-- cell too — its blocks keep their bottom layer — so the dip is a gentle
+-- one, and the middle block goes a block deeper, so the pool has a deep
+-- point rather than a flat floor.
+local TOP_LAYERS = FULL
+for cx = 0, 2 do
+    for cz = 0, 2 do
+        TOP_LAYERS = TOP_LAYERS & ~bit(cx, 0, cz)
+    end
+end
 local function dig_pool(x, y, z)
     for _ = 1, 3 do
         local up = at(x, y + 1, z)
@@ -944,6 +958,7 @@ local function dig_pool(x, y, z)
         return false
     end
     local water = {}
+    local level = 15 + hash(x, y + 2, z) % 13             -- cells of 27: this pool's own
     edits.begin()
     for _, p in ipairs(extra) do
         edits.push(p, "engine:air")
@@ -951,14 +966,19 @@ local function dig_pool(x, y, z)
     for dz = -POOL_R, POOL_R do
         for dx = -POOL_R, POOL_R do
             local d2 = dx * dx + dz * dz
-            if d2 <= POOL_R * POOL_R then
-                edits.push({ x = x + dx, y = y, z = z + dz }, "engine:air")
-            end
             if d2 <= (POOL_R - 1) * (POOL_R - 1) then
+                edits.push({ x = x + dx, y = y, z = z + dz }, "engine:air")
                 edits.push({ x = x + dx, y = y - 1, z = z + dz }, "engine:air")
-                water[#water + 1] = { x = x + dx, y = y - 1, z = z + dz }
+                water[#water + 1] = { x = x + dx, y = y - 1, z = z + dz, volume = level }
+            elseif d2 <= POOL_R * POOL_R then
+                -- The bank: the top two cell layers off, the bottom one kept.
+                edits.push({ x = x + dx, y = y, z = z + dz }, "engine:air", TOP_LAYERS, true)
             end
         end
+    end
+    if is_whole(at(x, y - 2, z)) then
+        edits.push({ x = x, y = y - 2, z = z }, "engine:air")
+        water[#water + 1] = { x = x, y = y - 2, z = z, volume = 27 }
     end
     if not edits.commit(RESERVE) then
         return false
@@ -966,7 +986,7 @@ local function dig_pool(x, y, z)
     -- The batch lands within MAX_WAITING * BATCH_EVERY ticks; wait past that.
     edits.later(90, function()
         for _, p in ipairs(water) do
-            game.set_fluid(p, { fluid = "spindle:water", volume = 27 })
+            game.set_fluid({ x = p.x, y = p.y, z = p.z }, { fluid = "spindle:water", volume = p.volume })
         end
     end)
     return true
