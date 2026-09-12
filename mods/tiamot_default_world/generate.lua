@@ -111,7 +111,7 @@ game.register_on_generate(function(buf, pos)
     -- Which ring's programs: one ring's own away from the bands where
     -- rings meet, the cross-faded ones in them (shape.lua, "terrain MODES").
     local mode = shape.terrain_mode_for(ulo, uhi)
-    local T = P.top[mode]
+    local T = shape.top_for(mode)
     -- T, the real depth: the engine's bound on the terrain field over this
     -- chunk. Wrong in one direction only — it may say "maybe" about a chunk
     -- that turns out to be air, never "air" about one that is not.
@@ -183,7 +183,7 @@ game.register_on_generate(function(buf, pos)
             -- The biome's own top.
             local found = tdw.surface_biomes_in(ulo, uhi)
             local function fills_of(biome)
-                return mode == "all" and biome.fills_all or biome.fills
+                return tdw.fills_for(biome, mode)
             end
             for _, biome in ipairs(found) do
                 for _, fill in ipairs(fills_of(biome)) do

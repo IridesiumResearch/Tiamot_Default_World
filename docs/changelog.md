@@ -88,6 +88,33 @@ engine commit they landed in, because the mod is written against them.
 - The dev switch (`tdw.config.everywhere` in `init.lua`) is on
   `alpine_highlands`.
 
+### 1.3 Alpine Highlands, second cut: the Alps as a map
+
+- The first cut's hard-clamped terraces on 3D noise gave overhanging
+  drop-offs everywhere, because a field's noises vary in y as much as in
+  x. The range is now a MAP built once per world in the pre-pass
+  (`game.register_on_world_init`): a ridged multifractal (arêtes and horns)
+  pulled down to flat floors along the zero contour of a slow valley noise —
+  a meandering ribbon, so the valleys connect into a glacier network
+  between the massifs rather than sitting as bowls (the U profile) — then
+  two erosion passes over the whole map — needle peaks capped at 25 blocks
+  over their 24-block neighbourhood mean, and valley floors replaced by
+  their own 40-block blur so they lie flat while ridges keep their edges.
+  The terrain reads it through a map node; small 3D crags stay in the field.
+- `ice` is a new block (asked for by name). Above the snowline (50 blocks
+  over the base dome) everything but the crests is packed snow two blocks
+  deep and every valley floor and cirque is ice three blocks deep — the
+  glaciers — so almost no stone shows up high; the lower slopes keep the
+  scree, permafrost and thin dirt. The one-cell snow cover is gone.
+- Programs that read the maps (the alpine and cross-faded terrain sets and
+  the alpine biome's fills) are compiled at the first chunk that needs
+  them, after the pre-pass; the rest still compile at load where the mod
+  check sees them. The spawn drop height follows the range's peak.
+- One map, 8 km square at 8 blocks a sample, centred on the spawn; outside
+  it the map holds its edge value. Tiling the frost ring comes after the
+  shape is right. A world made before this keeps generating without the
+  maps (the pre-pass runs once per world), so look at it in a new world.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

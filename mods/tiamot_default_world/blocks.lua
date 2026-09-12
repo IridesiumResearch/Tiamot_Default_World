@@ -66,7 +66,8 @@ block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = RO
 -- permafrost in patches, and snow as a crust one cell thick (a cover).
 block("slate", "Slate", "Dark, layered, splits in sheets.", { hardness = 1.4, tint = ROCK })
 block("permafrost", "Permafrost", "Ground frozen hard, grey-brown.", { hardness = 0.9, tint = SOIL })
-block("snow", "Packed snow", "A windswept crust.", { hardness = 0.2, tint = ROCK })
+block("snow", "Packed snow", "Two blocks of it over everything above the snowline.", { hardness = 0.2, tint = ROCK })
+block("ice", "Glacier ice", "The valley floors and cirques above the snowline.", { hardness = 0.8, tint = ROCK })
 
 -- Ground cover. Cells, not blocks: a fern is two cell layers of a block, a
 -- tuft of grass one to three, a bramble a tangle of cells over a few

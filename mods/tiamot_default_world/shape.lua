@@ -120,27 +120,9 @@ M.SWELL_FREQ = 1 / 420
 M.SWELL_OCTAVES = 2
 M.RIDGE_AMP = 0.0045      -- km: a ridge stands four or five blocks over the swell
 M.HOLLOW_DEEPEN = 0.35    -- the swell's low side is this much deeper than its high side is high
--- Alpine highlands (1.3): fake erosion in the field. A STAIRCASE of hard
--- ramps on one slow noise makes stepped plateaus with sheer risers between
--- them (each riser is STEP_H tall and crosses in 1/STEP_K of the noise's
--- units, which at PLATEAU_FREQ is a handful of blocks); a tent along a
--- noise's zero contour makes a razor-thin ridgeway; a clamped bowl on a
--- third noise makes a cirque with a steep headwall; a fine ridged noise
--- makes the crags. The materials read the same ramps back (alpine_steep).
-M.PLATEAU_FREQ = 1 / 600
-M.STEP_T = { -0.2, -0.05, 0.1, 0.25 }  -- where in the noise (+/-0.42) each riser stands
-M.STEP_H = 0.02            -- km: a riser is twenty blocks, "sudden 15-30 block sheer drop-offs"
-M.STEP_K = 150             -- how hard the ramp is clamped: 1/150 of the noise across the riser
-M.RIDGEWAY_FREQ = 1 / 900
-M.RIDGEWAY_H = 0.03        -- km: thirty blocks of fin
-M.RIDGEWAY_W = 0.025       -- noise units: a fin some thirty blocks across at the foot
-M.CIRQUE_FREQ = 1 / 450
-M.CIRQUE_T = 0.12          -- the bowls cover the noise above this: about a quarter of the ground
-M.CIRQUE_D = 0.04          -- km: forty blocks deep
-M.CIRQUE_K = 30            -- the headwall crosses in 1/30 of the noise
-M.CRAG_FREQ = 1 / 35
-M.CRAG_OCTAVES = 2
-M.CRAG_H = 0.006           -- km: |n| * 6 is up to two and a half blocks of jag
+-- Alpine highlands (1.3): the range is a MAP (biomes/alpine_highlands.lua
+-- builds it in the world pre-pass and defines `M.alpine_terms`, which the
+-- terrain reads through a map node); nothing of its shape lives here.
 -- Where the alpine terms apply: the frost ring, fading over ALPINE_BLEND_U
 -- of u at its outer edge into the temperate ring's terms. (Its inner edge,
 -- the Crown, is left to the Crown's biomes when they are built.)
@@ -375,55 +357,6 @@ function M.terrain_mode_for(u_lo, u_hi)
     return "all"
 end
 
--- The alpine staircase: STEP_H * sum_i clamp(STEP_K * (n - t_i), 0, 1). The
--- noise is evaluated once per riser (no dup in the stack machine), one
--- octave, so four risers are four cheap nodes.
-local function plateau_noise()
-    return noise("plateau", M.PLATEAU_FREQ, 1, 1.0)
-end
-local function terraces()
-    local acc = nil
-    for _, t in ipairs(M.STEP_T) do
-        local ramp = clamp(mul(sub(plateau_noise(), const(t)), const(M.STEP_K)), 0.0, 1.0)
-        acc = acc and add(acc, ramp) or ramp
-    end
-    return mul(acc, const(M.STEP_H))
-end
--- A ridgeway: a tent along the zero contour, RIDGEWAY_H tall.
-local function ridgeway()
-    return mul(clamp(sub(const(1.0), mul(abs(noise("ridgeway", M.RIDGEWAY_FREQ, 1, 1.0)), const(1.0 / M.RIDGEWAY_W))), 0.0, 1.0),
-        const(M.RIDGEWAY_H))
-end
--- A cirque: a bowl CIRQUE_D deep where its noise is above CIRQUE_T, with a
--- headwall that crosses in 1/CIRQUE_K of the noise.
-local function cirque_noise()
-    return noise("cirque", M.CIRQUE_FREQ, 1, 1.0)
-end
-local function cirques()
-    return mul(clamp(mul(sub(cirque_noise(), const(M.CIRQUE_T)), const(M.CIRQUE_K)), 0.0, 1.0), const(-M.CIRQUE_D))
-end
--- Crags: a ridged fine noise, |n|, everywhere on the rock.
-local function crags()
-    return mul(abs(noise("crag", M.CRAG_FREQ, M.CRAG_OCTAVES, 1.0)), const(M.CRAG_H))
-end
-function M.alpine_terms()
-    return add(add(terraces(), ridgeway()), add(cirques(), crags()))
-end
--- How much of a riser or a headwall a place is, 0 on the flats to 1 on
--- the face: 1 within half a riser's width of each riser's middle, fading
--- to 0 a riser's width further out; the same for the cirque wall. The
--- risers' noise is evaluated once per riser here too. For the materials.
-function M.alpine_steep()
-    local acc = nil
-    for _, t in ipairs(M.STEP_T) do
-        local centre = t + 0.5 / M.STEP_K
-        local near = clamp(sub(const(1.5), mul(abs(sub(plateau_noise(), const(centre))), const(M.STEP_K))), 0.0, 1.0)
-        acc = acc and add(acc, near) or near
-    end
-    local wall_centre = M.CIRQUE_T + 0.5 / M.CIRQUE_K
-    local wall = clamp(sub(const(1.5), mul(abs(sub(cirque_noise(), const(wall_centre))), const(M.CIRQUE_K))), 0.0, 1.0)
-    return clamp(add(acc, wall), 0.0, 1.0)
-end
 -- The alpine weight: 1 through the frost ring, fading to 0 over
 -- ALPINE_BLEND_U past its outer edge.
 local function alpine_weight()
@@ -574,13 +507,27 @@ local function top_programs(mode)
     M.terrain_mode = nil
     return set
 end
+-- The alpine and cross-faded sets read the alpine maps, which exist only
+-- after the world pre-pass, so they are compiled at the first chunk that
+-- needs them (`top_for`); the rest are compiled here, at load, where
+-- `--check-mods` sees them.
 P.top = {}
+local LAZY = { alpine = true, all = true }
+function M.top_for(mode)
+    local set = P.top[mode]
+    if set == nil then
+        set = top_programs(mode)
+        P.top[mode] = set
+    end
+    return set
+end
 if tdw.config.everywhere then
-    P.top[M.default_mode()] = top_programs(M.default_mode())
-else
-    for _, mode in ipairs({ "temperate", "alpine", "all" }) do
+    local mode = M.default_mode()
+    if not LAZY[mode] then
         P.top[mode] = top_programs(mode)
     end
+else
+    P.top.temperate = top_programs("temperate")
 end
 P.flank = {
     solid = compile("flank.solid", min(M.terrain(true), M.body())),
@@ -600,13 +547,14 @@ P.hollow = compile("hollow", M.inside(M.HOLLOW_R))
 -- worth running. Ordinary + - * / on doubles is IEEE-exact everywhere; no
 -- libm here.
 -- How far above the base dome a landing player is dropped, beyond the
--- plain's own thirty: the alpine terms can stand the ground a hundred
--- blocks over the dome (four risers, a ridgeway, the crags), and a player
--- put down inside a terrace would have to climb out through chunks the
--- vertical view does not reach.
+-- plain's own thirty: the alpine range stands its peaks ALPINE_PEAK km
+-- over the dome (the biome file says how high), and a player put down
+-- inside a mountain would have to climb out through chunks the vertical
+-- view does not reach. The landing scans down and hops, so a valley floor
+-- far below the drop is found in a few hops.
 function M.spawn_extra_above()
     if M.default_mode() == "alpine" then
-        return math.ceil((#M.STEP_T * M.STEP_H + M.RIDGEWAY_H + 0.42 * M.CRAG_H) * 1000) + 10
+        return math.ceil((M.ALPINE_PEAK or 0.4) * 1000) + 10
     end
     return 0
 end

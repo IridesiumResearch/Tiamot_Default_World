@@ -204,21 +204,31 @@ built one at a time in its own file. Built so far:
       step and no line at the border. A grass tick belongs to the biome whose
       soil is under the turf (`tdw.soil_under`). The grass tick logs its counts every ten seconds and
       on `stats` in chat.
-- [x] 1.3 Alpine Highlands — the frost ring's dry half, and the first fake
-      erosion in the field itself (`shape.alpine_terms`): stepped plateaus
-      from a staircase of hard-clamped ramps on one slow noise, each riser
-      twenty blocks and sheer; razor-thin ridgeways as a tent along a
-      noise's zero contour, thirty blocks tall; glacial cirques as clamped
-      bowls forty blocks deep with steep headwalls; jagged crags from a fine
-      ridged noise over all of it. The materials follow the shape, reading
-      the same ramps back (`shape.alpine_steep`): granite as the skin with
-      slate in seams, gravel drifts (the creek-bed gravel) in tongues down
-      the risers and cirque walls, permafrost in patches where it is not
-      steep, thin dirt in small patches on the flats, and packed snow as a
-      crust one cell thick stood on the flats where the wind lets it lie (a
-      cover fill). The alpine terms cross-fade into the temperate ring's
-      over a few hundred metres past the frost ring's outer edge; the inner
-      edge waits on the Crown. Nothing grows by tick here yet.
+- [x] 1.3 Alpine Highlands — the frost ring's dry half, and the first biome
+      whose shape is a MAP: the Alps, glacially carved
+      (`biomes/alpine_highlands.lua`). A field's noises are 3D, so a wall
+      built from one leans in y as much as it wanders in x — the first cut's
+      terraces overhung everywhere; a map is a surface, and can see all of
+      itself, which is what erosion is. In the world pre-pass
+      (`game.register_on_world_init`) the range is filled into a map 8 km
+      square at 8 blocks a sample, centred on the spawn: a ridged
+      multifractal (four octaves of a crest along each noise's zero contour,
+      the finer weighted by the coarser — arêtes, and horns where they meet)
+      pulled down to flat floors where a slow valley noise is low, over
+      walls steep enough to read as glacial; then erosion passes — needle
+      peaks capped over their neighbourhood mean, valley floors replaced by
+      their own wide blur so they lie flat while the ridges keep their
+      edges. The terrain reads the map through a map node, with small 3D
+      crags left in the field for roughness up close. Two more maps carry
+      the floors and the crests for the materials: the mountains are stone
+      (granite with slate seams) but above the snowline almost none shows —
+      packed snow two blocks deep on everything but the crests, and ice
+      three deep on the floors and in the cirques, the glaciers; below it
+      scree under the crests, permafrost and thin dirt in patches. The
+      programs that read the maps are compiled at the first alpine chunk,
+      after the pre-pass. Outside the map it holds its edge value; tiling
+      the whole frost ring is the step after the shape is right. Nothing
+      grows by tick here yet.
 
 ## Licence
 

@@ -91,11 +91,38 @@ function tdw.build_biome(id, build)
         return fills
     end
     local own = tdw.config.everywhere and tdw.shape.default_mode() or biome.ring_mode or "temperate"
-    biome.fills = compile_fills(own)
-    if not tdw.config.everywhere then
-        biome.fills_all = compile_fills("all")
+    biome.built = true
+    biome.own_mode = own
+    biome.compile_fills = compile_fills
+    -- What is compiled now and what waits for the first chunk. A lazy
+    -- biome's programs read maps the world pre-pass builds, which do not
+    -- exist at load; the cross-faded ("all") fills of EVERY biome read them
+    -- too, since they carry the alpine terms; and a biome that is not the
+    -- one the dev switch puts everywhere is never asked for fills at all.
+    -- The rest compiles here, where `--check-mods` sees it.
+    local only = tdw.config.everywhere
+    if only and only ~= id then
+        game.log(string.format("tiamot_default_world biome %-24s built, fills not compiled (%s is everywhere)", id, only))
+        return
     end
+    if biome.lazy then
+        game.log(string.format("tiamot_default_world biome %-24s built lazily, mode %s", id, own))
+        return
+    end
+    biome.fills = compile_fills(own)
     game.log(string.format("tiamot_default_world biome %-24s built, %d fill(s), mode %s", id, #biome.fills, own))
+end
+
+-- A biome's fills for a terrain mode, compiled on first use if the biome
+-- is lazy. Called per chunk by the generator.
+function tdw.fills_for(biome, mode)
+    local key = mode == "all" and "fills_all" or "fills"
+    if biome[key] == nil then
+        biome[key] = biome.compile_fills(mode == "all" and "all" or biome.own_mode)
+        game.log(string.format("tiamot_default_world biome %-24s compiled %d fill(s), mode %s", biome.id, #biome[key],
+            mode == "all" and "all" or biome.own_mode))
+    end
+    return biome[key]
 end
 
 -- A surface biome's placement mask for its fills: its ring, and its side
@@ -135,7 +162,7 @@ end
 function tdw.built_count()
     local n = 0
     for _, biome in ipairs(tdw.biome_list) do
-        if biome.fills then n = n + 1 end
+        if biome.built then n = n + 1 end
     end
     return n
 end
@@ -157,13 +184,13 @@ function tdw.surface_biomes_in(u_lo, u_hi)
     local only = tdw.config.everywhere
     if only then
         local biome = tdw.biomes[only]
-        if biome and biome.fills then
+        if biome and biome.built then
             found[1] = biome
         end
         return found
     end
     for _, biome in ipairs(tdw.areas.surface.biomes) do
-        if biome.fills and biome.ring then
+        if biome.built and biome.ring then
             local ring = tdw.layers.ring_by_id[biome.ring]
             if ring.u[1] <= u_hi and ring.u[2] >= u_lo then
                 found[#found + 1] = biome
