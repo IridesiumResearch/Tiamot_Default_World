@@ -210,8 +210,8 @@ built one at a time in its own file. Built so far:
       built from one leans in y as much as it wanders in x — the first cut's
       terraces overhung everywhere; a map is a surface, and can see all of
       itself, which is what erosion is. In the world pre-pass
-      (`game.register_on_world_init`) the range is filled into a map 8 km
-      square at 8 blocks a sample, centred on the spawn: a ridged
+      (`game.register_on_world_init`) the range is filled into a map 16 km
+      square at 16 blocks a sample, centred on the spawn: a ridged
       multifractal (four octaves of a crest along each noise's zero contour,
       the finer weighted by the coarser — arêtes, and horns where they meet)
       pulled down to flat floors where a slow valley noise is low, over
@@ -222,8 +222,10 @@ built one at a time in its own file. Built so far:
       crags left in the field for roughness up close. Two more maps carry
       the floors and the crests for the materials: the mountains are stone
       (granite with slate seams) but above the snowline almost none shows —
-      packed snow two blocks deep on everything but the crests, and ice
-      three deep on the floors and in the cirques, the glaciers; below it
+      packed snow four blocks deep wherever the ground faces up — the
+      snowline comes down the valleys and goes up the crests, and the walls
+      carry none, from the floor and crest masks — and ice three deep on
+      the floors and in the cirques, the glaciers; below it
       scree under the crests, permafrost and thin dirt in patches. Lakes,
       medium to large, on a sixth of the floors: the floor under a lake is
       smoothed harder so it lies level, and the fills make its top block

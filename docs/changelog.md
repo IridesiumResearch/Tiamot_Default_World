@@ -126,6 +126,20 @@ engine commit they landed in, because the mod is written against them.
   the fluid fill takes one world level and a lake's level cannot reach
   Lua — engine ask 18 is a fluid fill by heightmap.
 
+### Alpine, third cut: bigger, deeper snow, snow by aspect, stronger erosion
+
+- The range two and a half times the second cut in height and breadth:
+  ridge octaves from 1/3000, peaks near 0.9 km, valleys 500 blocks across,
+  the map 16 km square at 16 blocks a sample. Snow four blocks deep.
+- Snow lies by aspect: the snowline comes down 80 blocks in the valleys
+  (the floor mask), goes up 100 blocks on the crests (the crest mask), and
+  the walls — the valley mask's transition band, f(1-f) — carry none. The
+  masks the map already holds stand in for the dot product with up, since
+  a map has no gradient op.
+- Erosion 1.75 times as strong: the peak cap's neighbourhood 48 blocks and
+  the floor blur 64, and the cap 36 blocks over the mean against a range
+  two and a half times taller.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

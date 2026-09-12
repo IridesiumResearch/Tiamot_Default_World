@@ -45,10 +45,16 @@
 -- the cirques (the glaciers). Below the snowline the lower slopes: scree
 -- under the crests, permafrost and thin dirt in patches.
 --
--- Coverage: ONE map, 8 km square at 8 blocks a sample, centred on the
+-- Coverage: ONE map, 16 km square at 16 blocks a sample, centred on the
 -- spawn — enough to walk and fly for review under the dev switch. Outside
 -- it the map holds its edge value. Tiling the whole frost ring is the
 -- step after the shape is right.
+--
+-- Scale (2026-09-12): the range two and a half times the first cut in
+-- both height and breadth, the snow twice as deep, the erosion passes
+-- 1.75 times as strong (their radii in blocks, and the peak cap that much
+-- lower), and the snow lying by aspect: down the valleys and off the walls
+-- and crests, from the floor and crest masks the map already carries.
 --
 -- Nothing grows by random tick yet.
 
@@ -59,46 +65,55 @@ local n = shape.node
 -- The map: where and how fine. Changing any of these makes a NEW map; a
 -- world made with the old one keeps generating against the old one.
 local MAP_SIDE = 1024
-local MAP_SCALE = 8                                   -- blocks per sample
+local MAP_SCALE = 16                                  -- blocks per sample
 local MAP_ORIGIN_X = shape.SPAWN_X - MAP_SIDE * MAP_SCALE // 2
 local MAP_ORIGIN_Z = shape.SPAWN_Z - MAP_SIDE * MAP_SCALE // 2
 local MAP_SEED = 1303                                 -- mixed with the world's own by the engine
 
 -- The range. Four ridged octaves, each a crest along its noise's zero
 -- contour, the finer weighted by the coarser.
-local RIDGE_FREQ = 1 / 1200                           -- the big ridges, a kilometre apart
-local RIDGE_AMP = { 0.20, 0.10, 0.045, 0.02 }         -- km per octave: peaks near 0.36 km
+local RIDGE_FREQ = 1 / 3000                           -- the big ridges, two and a half kilometres apart
+local RIDGE_AMP = { 0.50, 0.25, 0.1125, 0.05 }        -- km per octave: peaks near 0.9 km
 -- Glacial valleys: floors within VALLEY_W of the valley noise's zero
 -- contour, walls over the next 1/VALLEY_K of the noise, floors at
 -- VALLEY_FLOOR of the ridge height plus VALLEY_BASE.
-local VALLEY_FREQ = 1 / 1400
-local VALLEY_W = 0.06                                 -- noise units: a trunk valley some 200 blocks across; about a quarter of the ground is floor
+local VALLEY_FREQ = 1 / 3500
+local VALLEY_W = 0.06                                 -- noise units: a trunk valley some 500 blocks across; about a quarter of the ground is floor
 local VALLEY_K = 18                                   -- 1/18 of the noise's units from wall foot to rim
 local VALLEY_FLOOR = 0.15                             -- share of the range kept on a floor
-local VALLEY_BASE = 0.02                              -- km: the floor's own height
+local VALLEY_BASE = 0.05                              -- km: the floor's own height
 -- A gentle tilt under everything, so no two valleys sit at one height.
-local BASE_FREQ = 1 / 3000
-local BASE_AMP = 0.06
--- Erosion passes.
-local PEAK_BLUR = 3                                   -- samples (24 blocks): the neighbourhood a peak is judged against
-local PEAK_OVER = 0.025                               -- km: how far a peak may stand over that mean
-local FLOOR_BLUR = 5                                  -- samples (40 blocks): how smooth a valley floor is
+local BASE_FREQ = 1 / 7500
+local BASE_AMP = 0.15
+-- Erosion passes, 1.75 times the first cut: the radii in blocks, and the
+-- cap that much lower against the range's scale.
+local PEAK_BLUR = 3                                   -- samples (48 blocks): the neighbourhood a peak is judged against
+local PEAK_OVER = 0.036                               -- km: how far a peak may stand over that mean
+local FLOOR_BLUR = 4                                  -- samples (64 blocks): how smooth a valley floor is
 -- Where the crests are, for the rock: the primary ridge term over this.
 local CREST_FROM = 0.78
 local CREST_K = 8
 -- Lakes: where the lake noise is over LAKE_T, on the floors; its edge
 -- crosses in 1/LAKE_K of the noise. About a fifth of the floors, in
 -- bodies a hundred and fifty to three hundred blocks across.
-local LAKE_FREQ = 1 / 300
+local LAKE_FREQ = 1 / 450
 local LAKE_T = 0.10
 local LAKE_K = 15
-local LAKE_BLUR = 12                                  -- samples (96 blocks): a lake lies level
+local LAKE_BLUR = 10                                  -- samples (160 blocks): a lake lies level
 local LAKE_DEPTH = 0.008                              -- km: eight blocks of water under the ice
 local LAKE_ICE = 0.001                                -- km: one block of ice on top
 
--- The materials.
-local SNOWLINE = 0.05                                 -- km above the dome: snow and ice above, slopes below
-local SNOW_DEPTH = 0.002                              -- km: two blocks of packed snow
+-- The materials. The snowline is not one height: it comes down
+-- SNOW_VALLEY_DROP in the valleys (the floor mask) and goes up
+-- SNOW_CREST_RAISE on the crests, and the walls — the valley mask's own
+-- transition band, WALL_GAIN times f(1-f) — carry none: snow lies where
+-- the ground faces up, which is the dot product the designer asked for,
+-- read from the two masks the map already carries.
+local SNOWLINE = 0.125                                -- km above the dome: snow and ice above, slopes below
+local SNOW_VALLEY_DROP = 0.08                         -- km: how much lower the snow reaches down a valley
+local SNOW_CREST_RAISE = 0.10                         -- km: how much higher it must be to lie on a crest
+local WALL_GAIN = 6.0                                 -- f(1-f) peaks at 1/4; x6 makes the wall band read as 1
+local SNOW_DEPTH = 0.004                              -- km: four blocks of packed snow
 local ICE_DEPTH = 0.003                               -- km: three blocks of glacier
 local SLATE_FREQ = 1 / 90
 local SLATE_MIN = 0.12
@@ -231,6 +246,18 @@ tdw.build_biome("alpine_highlands", function(ctx)
     local function floor() return map_node("alp_floor") end
     local function lake() return map_node("alp_lake") end
     local function dry() return n.sub(n.const(0.5), lake()) end   -- positive off the lakes
+    -- The walls: the valley mask's transition band, f(1-f) scaled; and
+    -- "faces up": positive off the walls.
+    local function wall()
+        return n.mul(n.mul(floor(), n.sub(n.const(1.0), floor())), n.const(WALL_GAIN))
+    end
+    local function faces_up() return n.sub(n.const(0.5), wall()) end
+    -- The snowline by aspect: positive where the ground is above it.
+    local function snow_high()
+        local line = n.add(n.sub(n.const(SNOWLINE), n.mul(floor(), n.const(SNOW_VALLEY_DROP))),
+            n.mul(crest(), n.const(SNOW_CREST_RAISE)))
+        return n.sub(map_node("alp_height"), line)
+    end
     -- The rock: granite as the skin, slate in seams through it.
     local granite = shape.compile("biome.alpine.granite", masked(top()))
     local slate = shape.compile("biome.alpine.slate", masked(n.min(top(),
@@ -244,11 +271,12 @@ tdw.build_biome("alpine_highlands", function(ctx)
     local dirt = shape.compile("biome.alpine.dirt", masked(n.min(n.min(
         shape.terrain_band(0.0, DIRT_DEPTH, false), n.min(low(), dry())),
         n.sub(n.noise("thin_dirt", DIRT_FREQ, 1, 1.0), n.const(DIRT_MIN)))))
-    -- Above the snowline: snow two blocks deep on everything but the
-    -- crests, and ice three deep on the floors — the glaciers. Not on the
-    -- lakes, which are their own.
+    -- Above the snowline by aspect: snow four blocks deep where the ground
+    -- faces up — not on the walls, not on the crests — and ice three deep
+    -- on the floors: the glaciers. Not on the lakes, which are their own.
     local snow = shape.compile("biome.alpine.snow", masked(n.min(n.min(
-        shape.terrain_band(0.0, SNOW_DEPTH, false), n.min(high(), dry())), n.sub(n.const(0.5), crest()))))
+        shape.terrain_band(0.0, SNOW_DEPTH, false), n.min(snow_high(), dry())),
+        n.min(faces_up(), n.sub(n.const(0.5), crest())))))
     local ice = shape.compile("biome.alpine.ice", masked(n.min(n.min(
         shape.terrain_band(0.0, ICE_DEPTH, false), n.min(high(), dry())), n.sub(floor(), n.const(0.5)))))
     -- The lakes: a block of ice at the surface and eight of water under
