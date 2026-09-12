@@ -16,6 +16,25 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
+## 18. A fluid fill by heightmap (2026-09-12)
+
+**Wanted.** Frozen lakes on the alpine valley floors: an ice sheet with
+water under it, each lake at its own level. The floors are a map, so a
+lake's level is a value in that map.
+
+**Why the mod cannot do it.** `buf:fill_fluid_below(level, fluid)` takes
+ONE world height per call — a sea level — and a mod cannot read a map's
+value at a chunk (`Map:heightmap` is opaque to Lua; charter rule 4). So a
+lake's level cannot reach the fluid fill, and the lakes hold the `water`
+BLOCK under their ice instead of the fluid: it looks right through the
+ice and digs as water, but it does not flow.
+
+**Ask.** `buf:fill_fluid_below(heightmap, fluid)` accepting a
+`Tiamot.Heightmap` as well as a number: every column filled up to its own
+height, the counterpart of `fill_below_heightmap`. `Map:heightmap(pos)`
+already produces the argument. With it the lake water is one line and
+real.
+
 ## 17. The world cannot be read inside a dig or place hook (2026-09-11)
 
 **Seen.** `game.get_block` returns nil from inside `register_on_dig_complete`

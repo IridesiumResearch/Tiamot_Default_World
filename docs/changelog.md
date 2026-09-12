@@ -115,6 +115,17 @@ engine commit they landed in, because the mod is written against them.
   shape is right. A world made before this keeps generating without the
   maps (the pre-pass runs once per world), so look at it in a new world.
 
+### Alpine lakes
+
+- Medium to large frozen lakes on the valley floors, where a lake noise is
+  high: a fourth map. The floor under a lake is smoothed with a 96-block
+  blur so the lake lies level, and the fills make its top block ice and
+  the eight blocks under that water. The lake is not carved: its surface
+  is the floor, which keeps every lake chunk a surface chunk the generator
+  paints. The water is the `water` block rather than the fluid, because
+  the fluid fill takes one world level and a lake's level cannot reach
+  Lua — engine ask 18 is a fluid fill by heightmap.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

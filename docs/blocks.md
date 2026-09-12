@@ -75,7 +75,8 @@ somewhere that is not wet).
 | `slate` | seams through the granite, a quarter of the rock | asked for by name 2026-09-11 |
 | `permafrost` | patches of frozen ground off the steep faces | asked for by name 2026-09-11 |
 | `snow` | two blocks deep over everything above the snowline but the crests | asked for by name 2026-09-11 |
-| `ice` | three blocks deep on the valley floors and cirques above the snowline: the glaciers | asked for by name 2026-09-11 |
+| `ice` | three blocks deep on the valley floors and cirques above the snowline: the glaciers; a block of it over each lake | asked for by name 2026-09-11 |
+| `water` (reused) | eight blocks under each lake's ice, as the BLOCK, not the fluid | until the fluid fill takes a level per column (engine-asks 18) |
 
 Nine before the rule, two added under it (both asked for by name). The
 open question is `birch_leaves`: a birch canopy in oak green is wrong up

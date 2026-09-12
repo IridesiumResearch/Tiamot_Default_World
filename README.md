@@ -224,7 +224,12 @@ built one at a time in its own file. Built so far:
       (granite with slate seams) but above the snowline almost none shows —
       packed snow two blocks deep on everything but the crests, and ice
       three deep on the floors and in the cirques, the glaciers; below it
-      scree under the crests, permafrost and thin dirt in patches. The
+      scree under the crests, permafrost and thin dirt in patches. Lakes,
+      medium to large, on a sixth of the floors: the floor under a lake is
+      smoothed harder so it lies level, and the fills make its top block
+      ice and the eight beneath water — the `water` block, not the fluid,
+      until the fluid fill can take a level per column (engine-asks, item
+      18). The
       programs that read the maps are compiled at the first alpine chunk,
       after the pre-pass. Outside the map it holds its edge value; tiling
       the whole frost ring is the step after the shape is right. Nothing

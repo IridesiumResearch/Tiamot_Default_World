@@ -26,9 +26,18 @@
 --      over their neighbourhood mean; valley floors replaced by their own
 --      wide blur, so they lie flat and smooth while the ridges keep their
 --      edges (`docs/erosion-options.md`, method 1).
--- Two more maps carry what the materials need: `alp_floor` (1 on a valley
--- floor) and `alp_crest` (1 on a ridge crest). The 3D crags stay in the
--- field, small, for roughness up close.
+--   4. Lakes: medium to large, on the valley floors, where a lake noise is
+--      high — the floor under a lake is smoothed harder still so the lake
+--      lies level, and the fills turn its top block to ice and the eight
+--      blocks under that to water. The lake is not carved: its surface IS
+--      the floor, which is what keeps every lake chunk a surface chunk the
+--      generator paints, and what makes the ice a band of the surface like
+--      the snow. (The water is the `water` BLOCK, not the fluid: the fluid
+--      fill takes one world level, and a lake's level cannot reach Lua —
+--      engine-asks, item 18.)
+-- Three more maps carry what the materials need: `alp_floor` (1 on a
+-- valley floor), `alp_crest` (1 on a ridge crest) and `alp_lake` (1 in a
+-- lake). The 3D crags stay in the field, small, for roughness up close.
 --
 -- Materials: the mountains are stone — granite with slate seams — but
 -- above the snowline almost none of it shows: packed snow two blocks deep
@@ -77,6 +86,15 @@ local FLOOR_BLUR = 5                                  -- samples (40 blocks): ho
 -- Where the crests are, for the rock: the primary ridge term over this.
 local CREST_FROM = 0.78
 local CREST_K = 8
+-- Lakes: where the lake noise is over LAKE_T, on the floors; its edge
+-- crosses in 1/LAKE_K of the noise. About a fifth of the floors, in
+-- bodies a hundred and fifty to three hundred blocks across.
+local LAKE_FREQ = 1 / 300
+local LAKE_T = 0.10
+local LAKE_K = 15
+local LAKE_BLUR = 12                                  -- samples (96 blocks): a lake lies level
+local LAKE_DEPTH = 0.008                              -- km: eight blocks of water under the ice
+local LAKE_ICE = 0.001                                -- km: one block of ice on top
 
 -- The materials.
 local SNOWLINE = 0.05                                 -- km above the dome: snow and ice above, slopes below
@@ -124,6 +142,11 @@ end
 local function crest_mask()
     return n.clamp(n.mul(n.sub(r(1), n.const(CREST_FROM)), n.const(CREST_K)), 0.0, 1.0)
 end
+-- 1 in a lake: a blob of the lake noise, on a floor.
+local function lake_mask()
+    return n.mul(n.clamp(n.mul(n.sub(n.noise("alp_lake", LAKE_FREQ, 1, 1.0), n.const(LAKE_T)), n.const(LAKE_K)), 0.0, 1.0),
+        floor_mask())
+end
 
 -- The pre-pass: build the maps once per world. Scratch maps are stored
 -- with the world too (every named map is); they are small next to the
@@ -132,10 +155,12 @@ game.register_on_world_init(function()
     local height_map = game.map(map_spec("alp_height"))
     local floor_map = game.map(map_spec("alp_floor"))
     local crest_map = game.map(map_spec("alp_crest"))
+    local lake_map = game.map(map_spec("alp_lake"))
     local fill = { y = 0.0, seed = MAP_SEED }
     height_map:fill(game.density(height()), fill)
     floor_map:fill(game.density(floor_mask()), fill)
     crest_map:fill(game.density(crest_mask()), fill)
+    lake_map:fill(game.density(lake_mask()), fill)
 
     -- Needle peaks capped at PEAK_OVER above their neighbourhood mean.
     local mean = game.map(map_spec("alp_scratch_mean"))
@@ -156,6 +181,20 @@ game.register_on_world_init(function()
     keep:offset(1.0)                                  -- 1 - floor
     height_map:combine(keep, "mul")                   -- h * (1 - floor)
     height_map:combine(smooth, "add")                 -- + blur(h) * floor
+
+    -- Lakes lie level: the floor under a lake replaced by a much wider
+    -- blur of itself, the same way, so the ice sheet is flat to a block
+    -- or so across a lake.
+    local level = game.map(map_spec("alp_scratch_level"))
+    level:combine(height_map, "add")
+    level:blur(LAKE_BLUR)
+    level:combine(lake_map, "mul")                    -- blur(h) * lake
+    local land = game.map(map_spec("alp_scratch_land"))
+    land:combine(lake_map, "add")
+    land:scale_by(-1.0)
+    land:offset(1.0)                                  -- 1 - lake
+    height_map:combine(land, "mul")
+    height_map:combine(level, "add")
     game.log(string.format("tiamot_default_world alpine: maps built, %d samples a side at %d blocks, origin %d, %d",
         MAP_SIDE, MAP_SCALE, MAP_ORIGIN_X, MAP_ORIGIN_Z))
 end)
@@ -190,25 +229,35 @@ tdw.build_biome("alpine_highlands", function(ctx)
     end
     local function crest() return map_node("alp_crest") end
     local function floor() return map_node("alp_floor") end
+    local function lake() return map_node("alp_lake") end
+    local function dry() return n.sub(n.const(0.5), lake()) end   -- positive off the lakes
     -- The rock: granite as the skin, slate in seams through it.
     local granite = shape.compile("biome.alpine.granite", masked(top()))
     local slate = shape.compile("biome.alpine.slate", masked(n.min(top(),
         n.sub(n.noise("slate", SLATE_FREQ, 1, 1.0), n.const(SLATE_MIN)))))
     -- The lower slopes, below the snowline: scree under the crests, in
     -- tongues; permafrost and thin dirt in patches elsewhere.
-    local scree = shape.compile("biome.alpine.scree", masked(n.min(n.min(top(), low()),
+    local scree = shape.compile("biome.alpine.scree", masked(n.min(n.min(top(), n.min(low(), dry())),
         n.min(n.sub(crest(), n.const(0.3)), n.sub(n.noise("scree", SCREE_FREQ, 1, 1.0), n.const(SCREE_MIN))))))
-    local permafrost = shape.compile("biome.alpine.permafrost", masked(n.min(n.min(top(), low()),
+    local permafrost = shape.compile("biome.alpine.permafrost", masked(n.min(n.min(top(), n.min(low(), dry())),
         n.sub(n.noise("permafrost", PERMAFROST_FREQ, 1, 1.0), n.const(PERMAFROST_MIN)))))
     local dirt = shape.compile("biome.alpine.dirt", masked(n.min(n.min(
-        shape.terrain_band(0.0, DIRT_DEPTH, false), low()),
+        shape.terrain_band(0.0, DIRT_DEPTH, false), n.min(low(), dry())),
         n.sub(n.noise("thin_dirt", DIRT_FREQ, 1, 1.0), n.const(DIRT_MIN)))))
     -- Above the snowline: snow two blocks deep on everything but the
-    -- crests, and ice three deep on the floors — the glaciers.
+    -- crests, and ice three deep on the floors — the glaciers. Not on the
+    -- lakes, which are their own.
     local snow = shape.compile("biome.alpine.snow", masked(n.min(n.min(
-        shape.terrain_band(0.0, SNOW_DEPTH, false), high()), n.sub(n.const(0.5), crest()))))
+        shape.terrain_band(0.0, SNOW_DEPTH, false), n.min(high(), dry())), n.sub(n.const(0.5), crest()))))
     local ice = shape.compile("biome.alpine.ice", masked(n.min(n.min(
-        shape.terrain_band(0.0, ICE_DEPTH, false), high()), n.sub(floor(), n.const(0.5)))))
+        shape.terrain_band(0.0, ICE_DEPTH, false), n.min(high(), dry())), n.sub(floor(), n.const(0.5)))))
+    -- The lakes: a block of ice at the surface and eight of water under
+    -- it, written last so they take the lake's top from whatever the fills
+    -- above left there.
+    local lake_water = shape.compile("biome.alpine.lake_water", masked(n.min(
+        shape.terrain_band(LAKE_ICE, LAKE_ICE + LAKE_DEPTH, false), n.sub(lake(), n.const(0.5)))))
+    local lake_ice = shape.compile("biome.alpine.lake_ice", masked(n.min(
+        shape.terrain_band(0.0, LAKE_ICE, false), n.sub(lake(), n.const(0.5)))))
     return {
         { field = granite, material = blocks.granite },
         { field = slate, material = blocks.slate },
@@ -217,6 +266,8 @@ tdw.build_biome("alpine_highlands", function(ctx)
         { field = dirt, material = blocks.dirt },
         { field = snow, material = blocks.snow },
         { field = ice, material = blocks.ice },
+        { field = lake_water, material = blocks.water },
+        { field = lake_ice, material = blocks.ice },
     }
 end)
 tdw.biomes.alpine_highlands.soil = blocks.granite
