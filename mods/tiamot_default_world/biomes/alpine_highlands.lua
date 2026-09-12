@@ -122,7 +122,7 @@ local LAKE_ICE = 0.001                                -- km: one block of ice on
 -- transition band, WALL_GAIN times f(1-f) — carry none: snow lies where
 -- the ground faces up, which is the dot product the designer asked for,
 -- read from the two masks the map already carries.
-local SNOWLINE = 0.09                                 -- km above the dome: snow and ice above, slopes below
+local SNOWLINE = 0.065                                -- km above the dome: snow and ice above, slopes below
 -- The line is not drawn: it wanders by SNOW_WANDER over a few hundred
 -- blocks and is flecked by SNOW_FLECK at a few blocks, so its edge is a
 -- mottled zone some fifty blocks tall rather than a contour.
@@ -388,10 +388,22 @@ local at, hash = schem.at, schem.hash
 local FULL = game.OCCUPANCY_FULL
 local RESERVE = 6
 
-local BOULDER_CHANCE = 150     -- one surface block in this many, in a square that has them
+local BOULDER_CHANCE = 80      -- one surface block in this many, in a square that has them
 local BOULDER_CELL = 48        -- squares this wide...
 local BOULDER_CELL_ONE_IN = 2  -- ...one in this many has boulders
 local BOULDER_R = { 1.1, 1.5 } -- half-width, blocks: least and extra
+local ROCK_CHANCE = 45         -- small rocks, everywhere flat: one surface block in this many
+local ROCK_R = { 0.5, 0.5 }    -- half-width, blocks: least and extra
+-- Firs, below a rough tree line: TREELINE blocks over the base dome,
+-- jittered TREELINE_JITTER either way per TREELINE_CELL square. Tall and
+-- thin; one in three is a big one.
+local TREELINE = 90
+local TREELINE_JITTER = 15
+local TREELINE_CELL = 24
+local TREE_CHANCE = 18         -- one surface block in this many, below the line
+local TREE_APART = 3           -- never within this many blocks of another fir's trunk
+local FIR_SMALL = { 6, 5 }     -- blocks of height: least and extra
+local FIR_BIG = { 14, 9 }
 local HOLLOW_CHANCE = 300      -- one wall block in this many, in a square that has them
 local HOLLOW_CELL = 64
 local HOLLOW_CELL_ONE_IN = 2
@@ -399,16 +411,18 @@ local HOLLOW_R = { 1.6, 1.4 }  -- the first sphere's half-width: least and extra
 local STATS_EVERY = 200
 
 local GRANITE, SLATE = "tiamot_default_world:granite", "tiamot_default_world:slate"
+local FIR_LOG, FIR_NEEDLES = "tiamot_default_world:fir_log", "tiamot_default_world:fir_needles"
 local DIR8 = { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } }
 
-local stats = { turns = 0, boulders = 0, boulder_tries = 0, hollows = 0, hollow_tries = 0,
-    flat = 0, wall = 0, unloaded = 0, no_room = 0, errors = 0 }
+local stats = { turns = 0, boulders = 0, boulder_tries = 0, rocks = 0, rock_tries = 0, firs = 0, fir_tries = 0,
+    hollows = 0, hollow_tries = 0, flat = 0, wall = 0, headroom = 0, spacing = 0, unloaded = 0, no_room = 0, errors = 0 }
 local last_error = nil
 
 local function candidate(x, y, z, one_in)
     return hash(x, y, z) % one_in == 0
 end
 local function is_air(b) return b ~= nil and b.occupancy == 0 end
+local function is_fir(b) return b ~= nil and b.occupancy ~= 0 and b.material == blocks.fir_log end
 local function is_rock(b)
     return b ~= nil and b.occupancy ~= 0 and (b.material == blocks.granite or b.material == blocks.slate)
 end
@@ -461,6 +475,99 @@ local function place_boulder(x, y, z, rng)
     return edits.commit(RESERVE)
 end
 
+-- A small rock: a lone stone half a block or so across, on the flats.
+local function place_small_rock(x, y, z, rng)
+    if not edits.room(RESERVE) then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    local flat = flat_at(x, y, z)
+    if flat == nil then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    elseif not flat then
+        stats.flat = stats.flat + 1
+        return false
+    end
+    local ground, top = rocks.surface_at(x, z, y)
+    local surface = ground + (top.occupancy == FULL and 1.0 or 0.6)
+    local material = rng:below(4) == 0 and SLATE or GRANITE
+    edits.begin()
+    rocks.place_rock(material, x, surface, z, ROCK_R[1] + rng:below(6) / 10 * ROCK_R[2], rng,
+        { cuts = rng:below(2), buried = 0.3 + rng:below(3) / 10, squat = 0.7 + rng:below(3) / 10 })
+    return edits.commit(RESERVE)
+end
+
+-- Height of a surface block over the base dome, in blocks.
+local function over_dome(x, y, z)
+    local u = (x * x + z * z) * 1e-6 / (shape.R_DISC * shape.R_DISC)
+    return (y - shape.Y0) - shape.dome_at(u) * 1000
+end
+-- The tree line at (x, z): rough, by a hashed jitter per square.
+local function treeline_at(x, z)
+    return TREELINE + (hash(x // TREELINE_CELL, 7, z // TREELINE_CELL) % (2 * TREELINE_JITTER + 1)) - TREELINE_JITTER
+end
+local function fir_near(x, y, z)
+    for _, d in ipairs(DIR8) do
+        for r = 1, TREE_APART do
+            for dy = 0, 6 do
+                if is_fir(at(x + d[1] * r, y + dy, z + d[2] * r)) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+-- A fir: tall and thin. A cell-thin trunk, bare for the lowest sixth, and
+-- above that a cone of needle pads — flat rough ellipsoids shrinking from
+-- the skirt to a point — every block on a small tree, every other block
+-- on a big one, so the big ones read as tiered. Needles first, the trunk
+-- last so wood wins any cell both claim.
+local function grow_fir(x, y, z, rng)
+    if not edits.room(RESERVE) then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    local ground, top = rocks.surface_at(x, z, y)
+    if ground == nil then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
+    local big = rng:below(3) == 0
+    local height = schem.pick(rng, big and FIR_BIG or FIR_SMALL)
+    if not schem.loaded_box(x - 4, y - 2, z - 4, x + 4, y + height + 3, z + 4) then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
+    for dy = 1, height do
+        if not is_air(at(x, y + dy, z)) then
+            stats.headroom = stats.headroom + 1
+            return false
+        end
+    end
+    if fir_near(x, y, z) then
+        stats.spacing = stats.spacing + 1
+        return false
+    end
+    local surface = ground + (top.occupancy == FULL and 1.0 or 0.6)
+    local base_r = big and (1.6 + rng:below(5) / 10) or (1.0 + rng:below(4) / 10)
+    local skirt = math.max(1, math.floor(height / 6))
+    local every = big and 2 or 1
+    edits.begin()
+    for i = skirt, height - 1, every do
+        local t = (i - skirt) / (height - skirt)
+        local r = base_r * (1.0 - t) + 0.35
+        schem.push_ellipsoid(FIR_NEEDLES, x + 0.5, surface + i + 0.5, z + 0.5, r, 0.55, r, { rough = 0.3, jitter = rng })
+    end
+    schem.push_ellipsoid(FIR_NEEDLES, x + 0.5, surface + height + 0.3, z + 0.5, 0.45, 0.9, 0.45, { rough = 0.2 })
+    for i = 0, height - 1 do
+        schem.push_ellipsoid(FIR_LOG, x + 0.5, surface + i + 0.5, z + 0.5, 0.4, 0.6, 0.4, { over_whole = true })
+    end
+    return edits.commit(RESERVE)
+end
+
 -- A hollow: from a granite block that is a wall face — air on one side
 -- with more air beyond and above it, rock behind — a chain of two to four
 -- rough spheres carved inward, each a little smaller, wandering a little.
@@ -502,20 +609,29 @@ local function carve_hollow(x, y, z, rng)
     return edits.commit(RESERVE)
 end
 
-local function on_surface(x, y, z)
-    if not mine(x, z) then return false end
-    stats.turns = stats.turns + 1
-    if not (candidate(x, y, z, BOULDER_CHANCE) and candidate(x // BOULDER_CELL, 29, z // BOULDER_CELL, BOULDER_CELL_ONE_IN)) then
-        return true
-    end
-    stats.boulder_tries = stats.boulder_tries + 1
-    local rng = game.rng_stream({ x = x // 16, y = y // 16, z = z // 16, seed = tdw.seed or 0 }, "boulder:" .. x .. ":" .. y .. ":" .. z)
-    local ok, result = pcall(place_boulder, x, y, z, rng)
+local function try(name, fn, x, y, z)
+    stats[name .. "_tries"] = stats[name .. "_tries"] + 1
+    local rng = game.rng_stream({ x = x // 16, y = y // 16, z = z // 16, seed = tdw.seed or 0 }, name .. ":" .. x .. ":" .. y .. ":" .. z)
+    local ok, result = pcall(fn, x, y, z, rng)
     if not ok then
         stats.errors = stats.errors + 1
         last_error = tostring(result)
     elseif result then
-        stats.boulders = stats.boulders + 1
+        stats[name .. "s"] = stats[name .. "s"] + 1
+    end
+end
+
+local function on_surface(x, y, z)
+    if not mine(x, z) then return false end
+    stats.turns = stats.turns + 1
+    -- Below the tree line a fir first; then the boulders, in their
+    -- squares; then the small rocks, everywhere.
+    if over_dome(x, y, z) < treeline_at(x, z) and candidate(x, y, z, TREE_CHANCE) then
+        try("fir", grow_fir, x, y, z)
+    elseif candidate(x, y, z, BOULDER_CHANCE) and candidate(x // BOULDER_CELL, 29, z // BOULDER_CELL, BOULDER_CELL_ONE_IN) then
+        try("boulder", place_boulder, x, y, z)
+    elseif candidate(x, y, z, ROCK_CHANCE) then
+        try("rock", place_small_rock, x, y, z)
     end
     return true
 end
@@ -529,15 +645,7 @@ local function on_rock(x, y, z)
     if not (candidate(x, y, z, HOLLOW_CHANCE) and candidate(x // HOLLOW_CELL, 31, z // HOLLOW_CELL, HOLLOW_CELL_ONE_IN)) then
         return true
     end
-    stats.hollow_tries = stats.hollow_tries + 1
-    local rng = game.rng_stream({ x = x // 16, y = y // 16, z = z // 16, seed = tdw.seed or 0 }, "hollow:" .. x .. ":" .. y .. ":" .. z)
-    local ok, result = pcall(carve_hollow, x, y, z, rng)
-    if not ok then
-        stats.errors = stats.errors + 1
-        last_error = tostring(result)
-    elseif result then
-        stats.hollows = stats.hollows + 1
-    end
+    try("hollow", carve_hollow, x, y, z)
     return true
 end
 tdw.on_random_tick(blocks.granite, on_rock)
@@ -550,8 +658,9 @@ tdw.on_tick(function(dt_ticks)
     since = 0
     if stats.turns == 0 then return end
     game.log(string.format(
-        "tiamot_default_world alpine: %d turns, %d boulders of %d, %d hollows of %d; refused: flat %d, not a wall %d, room %d, unloaded %d; errors %d (%s)",
-        stats.turns, stats.boulders, stats.boulder_tries, stats.hollows, stats.hollow_tries,
-        stats.flat, stats.wall, stats.no_room, stats.unloaded, stats.errors, last_error or "none"))
+        "tiamot_default_world alpine: %d turns, %d firs of %d, %d boulders of %d, %d rocks of %d, %d hollows of %d; refused: flat %d, not a wall %d, headroom %d, spacing %d, room %d, unloaded %d; errors %d (%s)",
+        stats.turns, stats.firs, stats.fir_tries, stats.boulders, stats.boulder_tries, stats.rocks, stats.rock_tries,
+        stats.hollows, stats.hollow_tries, stats.flat, stats.wall, stats.headroom, stats.spacing, stats.no_room,
+        stats.unloaded, stats.errors, last_error or "none"))
     for key in pairs(stats) do stats[key] = 0 end
 end)

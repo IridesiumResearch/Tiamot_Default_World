@@ -234,10 +234,12 @@ built one at a time in its own file. Built so far:
       smoothed harder so it lies level, and the fills make its top block
       ice and the eight beneath water — the `water` block, not the fluid,
       until the fluid fill can take a level per column (engine-asks, item
-      18). Boulders (granite, slate one in four, alone or in clusters)
-      grow by random tick on flat snow, permafrost, dirt and scree, and
-      hollows are carved into granite wall faces the same way — a chain of
-      rough spheres going in. The
+      18). Boulders (granite, slate one in four, alone or in clusters) and
+      small rocks grow by random tick on flat snow, permafrost, dirt and
+      scree, and hollows are carved into granite wall faces the same way —
+      a chain of rough spheres going in. Below a rough tree line 90 blocks
+      over the dome, firs: tall and thin, a cell-thin trunk and a cone of
+      needle pads to a point, tiered on the big ones. The
       programs that read the maps are compiled at the first alpine chunk,
       after the pre-pass. Outside the map it holds its edge value; tiling
       the whole frost ring is the step after the shape is right. Nothing

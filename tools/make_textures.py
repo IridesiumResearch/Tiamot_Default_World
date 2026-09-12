@@ -48,6 +48,8 @@ BLOCKS = {
     "permafrost":     (118, 108,  98,  0),
     "snow":           (228, 232, 236,  0),
     "ice":            (186, 210, 228,  0),
+    "fir_log":        ( 68,  56,  46,  0),
+    "fir_needles":    ( 40,  68,  54,  0),
     "rose_blooms":    (176,  42,  64,  0),
     "water":          ( 58,  92, 110,  0),
     "gloam_stone":    ( 74,  78,  90,  0),
@@ -87,6 +89,7 @@ CELL_EDGES = [0, 5, 11, 16]     # the three cells across a 16-pixel face
 DOTS = {
     "oak_leaves": (2.6, 0.4, 0.6),
     "rose_bush": (2.9, 0.4, 0.5),   # a denser, rounder leaf than the oak's
+    "fir_needles": (2.3, 0.5, 0.7), # smaller, more scattered: needles in tufts
 }
 
 # A single round BLOOM in the middle of the tile, a little high, with a

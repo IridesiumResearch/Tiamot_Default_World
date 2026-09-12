@@ -169,6 +169,20 @@ engine commit they landed in, because the mod is written against them.
   into granite wall faces, a chain of two to four rough spheres going in.
   Counts logged every ten seconds under "alpine:".
 
+### Alpine, sixth cut: more rocks, lower snow, a tree line and firs
+
+- Boulders twice as often, and small lone rocks everywhere flat besides.
+- The snowline down to 65 blocks over the base dome.
+- A rough tree line at 90 blocks over the dome, jittered fifteen either
+  way per 24-block square, decided at runtime: a tick knows its surface
+  height, and the base dome's height at that radius is a formula. Below
+  it, firs grow by random tick on snow, permafrost, dirt and scree, never
+  within three blocks of another's trunk: tall and thin, a cell-thin
+  trunk bare for its lowest sixth and a cone of needle pads shrinking to a
+  point, every block on a small tree (six to ten blocks), every other
+  block on a big one (fourteen to twenty-two), so the big ones read as
+  tiered. Two new blocks, `fir_log` and `fir_needles`, asked for.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

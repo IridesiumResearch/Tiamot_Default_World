@@ -77,6 +77,8 @@ somewhere that is not wet).
 | `snow` | two blocks deep over everything above the snowline but the crests | asked for by name 2026-09-11 |
 | `ice` | three blocks deep on the valley floors and cirques above the snowline: the glaciers; a block of it over each lake | asked for by name 2026-09-11 |
 | `water` (reused) | eight blocks under each lake's ice, as the BLOCK, not the fluid | until the fluid fill takes a level per column (engine-asks 18) |
+| `fir_log` | the cell-thin trunk of a mountain fir, below the tree line | asked for 2026-09-12 ("a tall thin fir tree") |
+| `fir_needles` | tiers of needle pads, a cone to a point; the leaves' dot look, darker | asked for 2026-09-12 with the fir |
 
 Nine before the rule, two added under it (both asked for by name). The
 open question is `birch_leaves`: a birch canopy in oak green is wrong up

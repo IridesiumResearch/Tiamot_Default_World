@@ -68,6 +68,10 @@ block("slate", "Slate", "Dark, layered, splits in sheets.", { hardness = 1.4, ti
 block("permafrost", "Permafrost", "Ground frozen hard, grey-brown.", { hardness = 0.9, tint = SOIL })
 block("snow", "Packed snow", "Two blocks of it over everything above the snowline.", { hardness = 0.2, tint = ROCK })
 block("ice", "Glacier ice", "The valley floors and cirques above the snowline.", { hardness = 0.8, tint = ROCK })
+-- Firs, for the highlands' tree line (asked for 2026-09-12): a dark
+-- trunk and needles in the leaves' round-dot look, a darker blue-green.
+block("fir_log", "Fir log", "Trunk of a mountain fir.", { hardness = 1.0, tint = SOIL })
+block("fir_needles", "Fir needles", "Tiers of them, dark.", { hardness = 0.2, tint = GREEN, cutout = true, sway = true })
 
 -- Ground cover. Cells, not blocks: a fern is two cell layers of a block, a
 -- tuft of grass one to three, a bramble a tangle of cells over a few
