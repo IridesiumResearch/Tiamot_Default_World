@@ -150,6 +150,25 @@ engine commit they landed in, because the mod is written against them.
   a few blocks high, three times stronger on the walls and crests than on
   the flats and quiet under the snowfields, beside the fine crags.
 
+### Alpine, fifth cut: lower snow, mottled edges, boulders and hollows, sharper erosion
+
+- The snowline down to 90 blocks over the base dome, and no longer a line:
+  it wanders by a slow noise and is flecked by a fine one, so its edge is
+  a mottled zone some fifty blocks tall.
+- The material patches (slate, scree, permafrost, dirt) get two octaves
+  and a fine dither at their thresholds, so they have irregular outlines
+  and speckled edges instead of blobs.
+- Erosion: an unsharp pass before the others — the height plus six tenths
+  of its difference from a 32-block blur — which stands the arêtes and
+  spurs up and cuts the gullies down, the sharper shapes from the erosion
+  that were asked for; the peak cap and floor smoothing a little stronger.
+- Small clamped steps in the field: a noise clamped hard, ledges about a
+  block high wherever it crosses zero.
+- Grown by random tick: boulders (granite, slate one in four; alone or in
+  clusters) on flat snow, permafrost, dirt and scree; and hollows carved
+  into granite wall faces, a chain of two to four rough spheres going in.
+  Counts logged every ten seconds under "alpine:".
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

@@ -93,11 +93,16 @@ local VALLEY_BASE = 0.05                              -- km: the floor's own hei
 -- A gentle tilt under everything, so no two valleys sit at one height.
 local BASE_FREQ = 1 / 7500
 local BASE_AMP = 0.15
--- Erosion passes, 1.75 times the first cut: the radii in blocks, and the
--- cap that much lower against the range's scale.
-local PEAK_BLUR = 3                                   -- samples (48 blocks): the neighbourhood a peak is judged against
-local PEAK_OVER = 0.036                               -- km: how far a peak may stand over that mean
-local FLOOR_BLUR = 4                                  -- samples (64 blocks): how smooth a valley floor is
+-- Erosion passes. SHARPEN is an unsharp pass — the height plus a share of
+-- its difference from a short blur — which is what curvature-driven
+-- erosion does: convex ground (arêtes, spurs) stands up, concave ground
+-- (gullies, cirque floors) cuts down. Sharper shapes, from the erosion.
+-- Then the peak cap and the floor smoothing, a little stronger again.
+local SHARPEN_BLUR = 2                                -- samples (32 blocks): the scale the sharpening works at
+local SHARPEN = 0.6                                   -- share of (h - blur) added back
+local PEAK_BLUR = 4                                   -- samples (64 blocks): the neighbourhood a peak is judged against
+local PEAK_OVER = 0.030                               -- km: how far a peak may stand over that mean
+local FLOOR_BLUR = 5                                  -- samples (80 blocks): how smooth a valley floor is
 -- Where the crests are, for the rock: the primary ridge term over this.
 local CREST_FROM = 0.78
 local CREST_K = 8
@@ -117,20 +122,32 @@ local LAKE_ICE = 0.001                                -- km: one block of ice on
 -- transition band, WALL_GAIN times f(1-f) — carry none: snow lies where
 -- the ground faces up, which is the dot product the designer asked for,
 -- read from the two masks the map already carries.
-local SNOWLINE = 0.125                                -- km above the dome: snow and ice above, slopes below
+local SNOWLINE = 0.09                                 -- km above the dome: snow and ice above, slopes below
+-- The line is not drawn: it wanders by SNOW_WANDER over a few hundred
+-- blocks and is flecked by SNOW_FLECK at a few blocks, so its edge is a
+-- mottled zone some fifty blocks tall rather than a contour.
+local SNOW_WANDER = 0.06                              -- km of noise amplitude (+/- half) at SNOW_WANDER_FREQ
+local SNOW_WANDER_FREQ = 1 / 60
+local SNOW_FLECK = 0.05
+local SNOW_FLECK_FREQ = 1 / 9
 local SNOW_VALLEY_DROP = 0.08                         -- km: how much lower the snow reaches down a valley
 local SNOW_CREST_RAISE = 0.10                         -- km: how much higher it must be to lie on a crest
 local SNOW_DEPTH = 0.004                              -- km: four blocks of packed snow
 local ICE_DEPTH = 0.003                               -- km: three blocks of glacier
-local SLATE_FREQ = 1 / 90
-local SLATE_MIN = 0.12
-local SCREE_FREQ = 1 / 40
+-- The patches of each material: two octaves rather than one, so a
+-- patch has an irregular outline instead of a blob's, and a fine dither
+-- at the threshold so its edge is speckled rather than drawn.
+local SLATE_FREQ = 1 / 110
+local SLATE_MIN = 0.10
+local SCREE_FREQ = 1 / 50
 local SCREE_MIN = -0.05
-local PERMAFROST_FREQ = 1 / 120
-local PERMAFROST_MIN = 0.06
-local DIRT_FREQ = 1 / 70
-local DIRT_MIN = 0.16
+local PERMAFROST_FREQ = 1 / 140
+local PERMAFROST_MIN = 0.05
+local DIRT_FREQ = 1 / 80
+local DIRT_MIN = 0.14
 local DIRT_DEPTH = 0.0015
+local PATCH_DITHER = 0.18                             -- noise amplitude (+/- half) at PATCH_DITHER_FREQ, added before the threshold
+local PATCH_DITHER_FREQ = 1 / 5
 -- The field's own detail, under the map's resolution: a mid ridged noise
 -- (ledges and ribs a few blocks high, strongest on the walls and crests,
 -- quiet under the snowfields) and the fine crags. Both are 3D, so up
@@ -139,6 +156,12 @@ local DETAIL_FREQ = 1 / 70
 local DETAIL_H = 0.006                                -- km: up to two and a half blocks on the flats...
 local DETAIL_ROCK = 2.0                               -- ...and three times that on a wall or a crest
 local CRAG_H = 0.0025                                 -- km: the fine roughness
+-- Small clamped steps: a noise clamped hard makes little terraces and
+-- ledges a block or so high wherever it crosses zero — the "slightly
+-- clamped small-scale detail".
+local STEP_FREQ = 1 / 18
+local STEP_H = 0.0012                                 -- km: a step of about a block
+local STEP_STEEP = 8.0                                -- how hard the clamp is: bigger is a sharper edge
 
 local function map_spec(name)
     return { name = name, side = MAP_SIDE, scale = MAP_SCALE, origin_x = MAP_ORIGIN_X, origin_z = MAP_ORIGIN_Z }
@@ -202,6 +225,16 @@ game.register_on_world_init(function()
     crest_map:fill(game.density(crest_mask()), fill)
     lake_map:fill(game.density(lake_mask()), fill)
 
+    -- Sharpen: h + SHARPEN * (h - blur(h)). Convex ground stands up,
+    -- concave ground cuts down.
+    local high = game.map(map_spec("alp_scratch_high"))
+    high:combine(height_map, "add")
+    high:blur(SHARPEN_BLUR)
+    high:scale_by(-1.0)
+    high:combine(height_map, "add")                   -- h - blur(h)
+    high:scale_by(SHARPEN)
+    height_map:combine(high, "add")
+
     -- Needle peaks capped at PEAK_OVER above their neighbourhood mean.
     local mean = game.map(map_spec("alp_scratch_mean"))
     mean:combine(height_map, "add")
@@ -253,7 +286,9 @@ function shape.alpine_terms()
         map_node("alp_crest")), 0.0, 1.0)
     local detail = n.mul(n.mul(n.abs(n.noise("alp_detail", DETAIL_FREQ, 2, 1.0)), n.const(DETAIL_H)),
         n.add(n.const(1.0), n.mul(rock, n.const(DETAIL_ROCK))))
-    return n.add(n.add(map_node("alp_height"), detail), n.mul(n.abs(n.noise("crag", 1 / 35, 2, 1.0)), n.const(CRAG_H)))
+    local steps = n.mul(n.clamp(n.mul(n.noise("alp_steps", STEP_FREQ, 1, 1.0), n.const(STEP_STEEP)), -1.0, 1.0), n.const(STEP_H))
+    return n.add(n.add(map_node("alp_height"), n.add(detail, steps)),
+        n.mul(n.abs(n.noise("crag", 1 / 35, 2, 1.0)), n.const(CRAG_H)))
 end
 shape.ALPINE_PEAK = RIDGE_AMP[1] + RIDGE_AMP[2] + RIDGE_AMP[3] + RIDGE_AMP[4] + BASE_AMP * shape.NOISE_RANGE
 
@@ -283,25 +318,33 @@ tdw.build_biome("alpine_highlands", function(ctx)
         return n.mul(n.mul(floor(), n.sub(n.const(1.0), floor())), n.const(WALL_GAIN))
     end
     local function faces_up() return n.sub(n.const(0.5), wall()) end
-    -- The snowline by aspect: positive where the ground is above it.
+    -- The snowline by aspect, wandering and flecked: positive where the
+    -- ground is above it.
     local function snow_high()
         local line = n.add(n.sub(n.const(SNOWLINE), n.mul(floor(), n.const(SNOW_VALLEY_DROP))),
             n.mul(crest(), n.const(SNOW_CREST_RAISE)))
-        return n.sub(map_node("alp_height"), line)
+        local broken = n.add(n.noise("snow_wander", SNOW_WANDER_FREQ, 2, SNOW_WANDER),
+            n.noise("snow_fleck", SNOW_FLECK_FREQ, 1, SNOW_FLECK))
+        return n.add(n.sub(map_node("alp_height"), line), broken)
+    end
+    -- A patch of a material: three octaves of its noise plus a fine dither,
+    -- over its threshold.
+    local function patchy(stream, freq, min)
+        return n.sub(n.add(n.noise(stream, freq, 2, 1.0), n.noise(stream .. "_dither", PATCH_DITHER_FREQ, 1, PATCH_DITHER)),
+            n.const(min))
     end
     -- The rock: granite as the skin, slate in seams through it.
     local granite = shape.compile("biome.alpine.granite", masked(top()))
-    local slate = shape.compile("biome.alpine.slate", masked(n.min(top(),
-        n.sub(n.noise("slate", SLATE_FREQ, 1, 1.0), n.const(SLATE_MIN)))))
+    local slate = shape.compile("biome.alpine.slate", masked(n.min(top(), patchy("slate", SLATE_FREQ, SLATE_MIN))))
     -- The lower slopes, below the snowline: scree under the crests, in
     -- tongues; permafrost and thin dirt in patches elsewhere.
     local scree = shape.compile("biome.alpine.scree", masked(n.min(n.min(top(), n.min(low(), dry())),
-        n.min(n.sub(crest(), n.const(0.3)), n.sub(n.noise("scree", SCREE_FREQ, 1, 1.0), n.const(SCREE_MIN))))))
+        n.min(n.sub(crest(), n.const(0.3)), patchy("scree", SCREE_FREQ, SCREE_MIN)))))
     local permafrost = shape.compile("biome.alpine.permafrost", masked(n.min(n.min(top(), n.min(low(), dry())),
-        n.sub(n.noise("permafrost", PERMAFROST_FREQ, 1, 1.0), n.const(PERMAFROST_MIN)))))
+        patchy("permafrost", PERMAFROST_FREQ, PERMAFROST_MIN))))
     local dirt = shape.compile("biome.alpine.dirt", masked(n.min(n.min(
         shape.terrain_band(0.0, DIRT_DEPTH, false), n.min(low(), dry())),
-        n.sub(n.noise("thin_dirt", DIRT_FREQ, 1, 1.0), n.const(DIRT_MIN)))))
+        patchy("thin_dirt", DIRT_FREQ, DIRT_MIN))))
     -- Above the snowline by aspect: snow four blocks deep where the ground
     -- faces up — not on the walls, not on the crests — and ice three deep
     -- on the floors: the glaciers. Not on the lakes, which are their own.
@@ -330,3 +373,185 @@ tdw.build_biome("alpine_highlands", function(ctx)
     }
 end)
 tdw.biomes.alpine_highlands.soil = blocks.granite
+
+-- Runtime: boulders on the flats, hollows in the walls --------------------------
+--
+-- Grown by random tick, as the grasslands grow their erratics and dig
+-- their burrows. A tick on snow, permafrost, dirt or scree at the surface
+-- may put a boulder there if the ground is flat about it — granite mostly,
+-- slate one in four, alone or in a cluster. A tick on granite that is a
+-- wall face (air on one side, rock behind) may carve a hollow into it: a
+-- short chain of rough spheres going in, a small cavern.
+
+local edits, schem, rocks = tdw.edits, tdw.schem, tdw.rocks
+local at, hash = schem.at, schem.hash
+local FULL = game.OCCUPANCY_FULL
+local RESERVE = 6
+
+local BOULDER_CHANCE = 150     -- one surface block in this many, in a square that has them
+local BOULDER_CELL = 48        -- squares this wide...
+local BOULDER_CELL_ONE_IN = 2  -- ...one in this many has boulders
+local BOULDER_R = { 1.1, 1.5 } -- half-width, blocks: least and extra
+local HOLLOW_CHANCE = 300      -- one wall block in this many, in a square that has them
+local HOLLOW_CELL = 64
+local HOLLOW_CELL_ONE_IN = 2
+local HOLLOW_R = { 1.6, 1.4 }  -- the first sphere's half-width: least and extra
+local STATS_EVERY = 200
+
+local GRANITE, SLATE = "tiamot_default_world:granite", "tiamot_default_world:slate"
+local DIR8 = { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } }
+
+local stats = { turns = 0, boulders = 0, boulder_tries = 0, hollows = 0, hollow_tries = 0,
+    flat = 0, wall = 0, unloaded = 0, no_room = 0, errors = 0 }
+local last_error = nil
+
+local function candidate(x, y, z, one_in)
+    return hash(x, y, z) % one_in == 0
+end
+local function is_air(b) return b ~= nil and b.occupancy == 0 end
+local function is_rock(b)
+    return b ~= nil and b.occupancy ~= 0 and (b.material == blocks.granite or b.material == blocks.slate)
+end
+-- Whether a tick here is this biome's: everywhere, or in the frost ring.
+local function mine(x, z)
+    local only = tdw.config.everywhere
+    if only then return only == "alpine_highlands" end
+    local u = (x * x + z * z) * 1e-6 / (shape.R_DISC * shape.R_DISC)
+    local ring = tdw.layers.ring_by_id.frost
+    return u >= ring.u[1] and u < ring.u[2]
+end
+-- The ground is flat about (x, z): the surface within two blocks of its
+-- height three blocks out each way — the ledges and steps make even a
+-- flat here a little rough. nil when any of it is unloaded.
+local function flat_at(x, y, z)
+    local g0 = rocks.surface_at(x, z, y)
+    if g0 == nil then return nil end
+    for _, d in ipairs({ { 3, 0 }, { -3, 0 }, { 0, 3 }, { 0, -3 } }) do
+        local g = rocks.surface_at(x + d[1], z + d[2], y)
+        if g == nil then return nil end
+        if math.abs(g - g0) > 2 then return false end
+    end
+    return true
+end
+
+local function place_boulder(x, y, z, rng)
+    if not edits.room(RESERVE) then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    local flat = flat_at(x, y, z)
+    if flat == nil then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    elseif not flat then
+        stats.flat = stats.flat + 1
+        return false
+    end
+    local ground, top = rocks.surface_at(x, z, y)
+    local material = rng:below(4) == 0 and SLATE or GRANITE
+    local r = BOULDER_R[1] + rng:below(6) / 10 * BOULDER_R[2]
+    edits.begin()
+    if rng:below(3) == 0 then
+        rocks.place_cluster(material, x, y, z, rng, { big = r + 0.4, satellites = 2 + rng:below(3), pebbles = 3 })
+    else
+        local surface = ground + (top.occupancy == FULL and 1.0 or 0.6)
+        rocks.place_rock(material, x, surface, z, r, rng,
+            { cuts = 1 + rng:below(2), buried = 0.3 + rng:below(3) / 10, squat = 0.6 + rng:below(4) / 10 })
+    end
+    return edits.commit(RESERVE)
+end
+
+-- A hollow: from a granite block that is a wall face — air on one side
+-- with more air beyond and above it, rock behind — a chain of two to four
+-- rough spheres carved inward, each a little smaller, wandering a little.
+local function carve_hollow(x, y, z, rng)
+    if not edits.room(RESERVE) then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    local dir = nil
+    for _, d in ipairs(DIR8) do
+        local out, back = at(x + d[1], y, z + d[2]), at(x - d[1], y, z - d[2])
+        if out == nil or back == nil then
+            stats.unloaded = stats.unloaded + 1
+            return false
+        end
+        if is_air(out) and is_rock(back) and (is_air(at(x + 2 * d[1], y, z + 2 * d[2])) or is_air(at(x + d[1], y + 1, z + d[2]))) then
+            dir = d
+            break
+        end
+    end
+    if dir == nil then
+        stats.wall = stats.wall + 1
+        return false
+    end
+    if not schem.loaded_box(x - 8, y - 6, z - 8, x + 8, y + 6, z + 8) then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
+    edits.begin()
+    local r = HOLLOW_R[1] + rng:below(6) / 10 * HOLLOW_R[2]
+    local cx, cy, cz = x + 0.5 - dir[1] * 0.5, y + 0.6, z + 0.5 - dir[2] * 0.5
+    for _ = 1, 2 + rng:below(3) do
+        schem.push_ellipsoid("engine:air", cx, cy, cz, r, r * 0.8, r, { carve = true, rough = 0.3 })
+        cx = cx - dir[1] * r * 1.2 + (rng:below(3) - 1) * 0.5
+        cz = cz - dir[2] * r * 1.2 + (rng:below(3) - 1) * 0.5
+        cy = cy - 0.2 + rng:below(3) * 0.2
+        r = r * (0.85 + rng:below(3) / 10)
+    end
+    return edits.commit(RESERVE)
+end
+
+local function on_surface(x, y, z)
+    if not mine(x, z) then return false end
+    stats.turns = stats.turns + 1
+    if not (candidate(x, y, z, BOULDER_CHANCE) and candidate(x // BOULDER_CELL, 29, z // BOULDER_CELL, BOULDER_CELL_ONE_IN)) then
+        return true
+    end
+    stats.boulder_tries = stats.boulder_tries + 1
+    local rng = game.rng_stream({ x = x // 16, y = y // 16, z = z // 16, seed = tdw.seed or 0 }, "boulder:" .. x .. ":" .. y .. ":" .. z)
+    local ok, result = pcall(place_boulder, x, y, z, rng)
+    if not ok then
+        stats.errors = stats.errors + 1
+        last_error = tostring(result)
+    elseif result then
+        stats.boulders = stats.boulders + 1
+    end
+    return true
+end
+for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed }) do
+    tdw.on_random_tick(material, on_surface)
+end
+
+local function on_rock(x, y, z)
+    if not mine(x, z) then return false end
+    stats.turns = stats.turns + 1
+    if not (candidate(x, y, z, HOLLOW_CHANCE) and candidate(x // HOLLOW_CELL, 31, z // HOLLOW_CELL, HOLLOW_CELL_ONE_IN)) then
+        return true
+    end
+    stats.hollow_tries = stats.hollow_tries + 1
+    local rng = game.rng_stream({ x = x // 16, y = y // 16, z = z // 16, seed = tdw.seed or 0 }, "hollow:" .. x .. ":" .. y .. ":" .. z)
+    local ok, result = pcall(carve_hollow, x, y, z, rng)
+    if not ok then
+        stats.errors = stats.errors + 1
+        last_error = tostring(result)
+    elseif result then
+        stats.hollows = stats.hollows + 1
+    end
+    return true
+end
+tdw.on_random_tick(blocks.granite, on_rock)
+tdw.on_random_tick(blocks.slate, on_rock)
+
+local since = 0
+tdw.on_tick(function(dt_ticks)
+    since = since + dt_ticks
+    if since < STATS_EVERY then return end
+    since = 0
+    if stats.turns == 0 then return end
+    game.log(string.format(
+        "tiamot_default_world alpine: %d turns, %d boulders of %d, %d hollows of %d; refused: flat %d, not a wall %d, room %d, unloaded %d; errors %d (%s)",
+        stats.turns, stats.boulders, stats.boulder_tries, stats.hollows, stats.hollow_tries,
+        stats.flat, stats.wall, stats.no_room, stats.unloaded, stats.errors, last_error or "none"))
+    for key in pairs(stats) do stats[key] = 0 end
+end)
