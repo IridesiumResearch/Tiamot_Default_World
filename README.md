@@ -218,8 +218,11 @@ built one at a time in its own file. Built so far:
       walls steep enough to read as glacial; then erosion passes — needle
       peaks capped over their neighbourhood mean, valley floors replaced by
       their own wide blur so they lie flat while the ridges keep their
-      edges. The terrain reads the map through a map node, with small 3D
-      crags left in the field for roughness up close. Two more maps carry
+      edges; two finer ridged octaves and ribs down the walls (couloirs)
+      carry the detail the map can hold. The terrain reads the map through
+      a map node, and the field adds what is under the map's resolution: a
+      mid ridged 3D noise, ledges a few blocks high, strongest on the walls
+      and crests, and fine crags. Two more maps carry
       the floors and the crests for the materials: the mountains are stone
       (granite with slate seams) but above the snowline almost none shows —
       packed snow four blocks deep wherever the ground faces up — the

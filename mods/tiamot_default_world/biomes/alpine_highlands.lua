@@ -73,7 +73,15 @@ local MAP_SEED = 1303                                 -- mixed with the world's 
 -- The range. Four ridged octaves, each a crest along its noise's zero
 -- contour, the finer weighted by the coarser.
 local RIDGE_FREQ = 1 / 3000                           -- the big ridges, two and a half kilometres apart
-local RIDGE_AMP = { 0.50, 0.25, 0.1125, 0.05 }        -- km per octave: peaks near 0.9 km
+local RIDGE_AMP = { 0.50, 0.25, 0.1125, 0.05, 0.025, 0.012 }   -- km per octave: peaks near 0.9 km; the last two are ribs 47 and 23 blocks apart
+-- The walls: the floor mask's transition band, f(1-f), which peaks at 1/4;
+-- WALL_GAIN times that reads as 1 across the wall. Used by the ribs, the
+-- field's detail and the snow.
+local WALL_GAIN = 6.0
+-- Ribs down the walls (couloirs): a ridged octave that shows only in the
+-- valley mask's transition band.
+local RIB_FREQ = 1 / 375
+local RIB_AMP = 0.02                                  -- km: twenty blocks of rib, on a wall
 -- Glacial valleys: floors within VALLEY_W of the valley noise's zero
 -- contour, walls over the next 1/VALLEY_K of the noise, floors at
 -- VALLEY_FLOOR of the ridge height plus VALLEY_BASE.
@@ -112,7 +120,6 @@ local LAKE_ICE = 0.001                                -- km: one block of ice on
 local SNOWLINE = 0.125                                -- km above the dome: snow and ice above, slopes below
 local SNOW_VALLEY_DROP = 0.08                         -- km: how much lower the snow reaches down a valley
 local SNOW_CREST_RAISE = 0.10                         -- km: how much higher it must be to lie on a crest
-local WALL_GAIN = 6.0                                 -- f(1-f) peaks at 1/4; x6 makes the wall band read as 1
 local SNOW_DEPTH = 0.004                              -- km: four blocks of packed snow
 local ICE_DEPTH = 0.003                               -- km: three blocks of glacier
 local SLATE_FREQ = 1 / 90
@@ -124,7 +131,14 @@ local PERMAFROST_MIN = 0.06
 local DIRT_FREQ = 1 / 70
 local DIRT_MIN = 0.16
 local DIRT_DEPTH = 0.0015
-local CRAG_H = 0.003                                  -- km: the 3D roughness left in the field
+-- The field's own detail, under the map's resolution: a mid ridged noise
+-- (ledges and ribs a few blocks high, strongest on the walls and crests,
+-- quiet under the snowfields) and the fine crags. Both are 3D, so up
+-- close they make the small ledges and overhangs that rock has.
+local DETAIL_FREQ = 1 / 70
+local DETAIL_H = 0.006                                -- km: up to two and a half blocks on the flats...
+local DETAIL_ROCK = 2.0                               -- ...and three times that on a wall or a crest
+local CRAG_H = 0.0025                                 -- km: the fine roughness
 
 local function map_spec(name)
     return { name = name, side = MAP_SIDE, scale = MAP_SCALE, origin_x = MAP_ORIGIN_X, origin_z = MAP_ORIGIN_Z }
@@ -136,22 +150,33 @@ local function ridge(stream, freq)
         n.const(1.0 / (shape.NOISE_RANGE * 0.84))), 0.0, 1.0)
 end
 local function r(k) return ridge("alp_ridge" .. k, RIDGE_FREQ * 2 ^ (k - 1)) end
--- The range: A1 r1^2 + A2 r1 r2 + A3 r2 r3 + A4 r3 r4. A ridge appears
--- twice because the stack machine has no dup; the map is filled once.
+-- The range: A1 r1^2 + A2 r1 r2 + A3 r2 r3 + ... each finer octave
+-- weighted by the one before, so the detail is on the peaks. A ridge
+-- appears twice because the stack machine has no dup; the map is filled
+-- once, so it costs nothing that matters.
 local function range()
-    return n.add(n.add(n.mul(n.mul(r(1), r(1)), n.const(RIDGE_AMP[1])), n.mul(n.mul(r(1), r(2)), n.const(RIDGE_AMP[2]))),
-        n.add(n.mul(n.mul(r(2), r(3)), n.const(RIDGE_AMP[3])), n.mul(n.mul(r(3), r(4)), n.const(RIDGE_AMP[4]))))
+    local acc = n.mul(n.mul(r(1), r(1)), n.const(RIDGE_AMP[1]))
+    for k = 2, #RIDGE_AMP do
+        acc = n.add(acc, n.mul(n.mul(r(k - 1), r(k)), n.const(RIDGE_AMP[k])))
+    end
+    return acc
 end
 -- 1 on a valley floor, 0 on the massif, a wall between: the floor is the
 -- band |v| < VALLEY_W about the valley noise's zero contour.
 local function floor_mask()
     return n.clamp(n.mul(n.sub(n.const(VALLEY_W), n.abs(n.noise("alp_valley", VALLEY_FREQ, 2, 1.0))), n.const(VALLEY_K)), 0.0, 1.0)
 end
+-- The walls: the floor mask's transition band, f(1-f) scaled to read 1.
+local function wall_mask()
+    return n.clamp(n.mul(n.mul(floor_mask(), n.sub(n.const(1.0), floor_mask())), n.const(WALL_GAIN)), 0.0, 1.0)
+end
 -- The height: the range pulled down to its floor share where the floor
--- mask is 1, the floor's own height added there, and the tilt under all.
+-- mask is 1, the floor's own height added there, ribs on the walls, and
+-- the tilt under all.
 local function height()
     local kept = n.add(n.const(1.0), n.mul(floor_mask(), n.const(VALLEY_FLOOR - 1.0)))
-    return n.add(n.add(n.mul(range(), kept), n.mul(floor_mask(), n.const(VALLEY_BASE))),
+    local ribs = n.mul(n.mul(ridge("alp_rib", RIB_FREQ), wall_mask()), n.const(RIB_AMP))
+    return n.add(n.add(n.add(n.mul(range(), kept), n.mul(floor_mask(), n.const(VALLEY_BASE))), ribs),
         n.noise("alp_base", BASE_FREQ, 2, BASE_AMP))
 end
 local function crest_mask()
@@ -222,7 +247,13 @@ local function map_node(name)
     return { op = "map", map = game.map(map_spec(name)) }
 end
 function shape.alpine_terms()
-    return n.add(map_node("alp_height"), n.mul(n.abs(n.noise("crag", 1 / 35, 2, 1.0)), n.const(CRAG_H)))
+    -- Rock: 1 on a wall or a crest, 0 on a floor or a snowfield, from the
+    -- maps; the mid detail is DETAIL_ROCK times stronger there.
+    local rock = n.clamp(n.add(n.mul(n.mul(map_node("alp_floor"), n.sub(n.const(1.0), map_node("alp_floor"))), n.const(WALL_GAIN)),
+        map_node("alp_crest")), 0.0, 1.0)
+    local detail = n.mul(n.mul(n.abs(n.noise("alp_detail", DETAIL_FREQ, 2, 1.0)), n.const(DETAIL_H)),
+        n.add(n.const(1.0), n.mul(rock, n.const(DETAIL_ROCK))))
+    return n.add(n.add(map_node("alp_height"), detail), n.mul(n.abs(n.noise("crag", 1 / 35, 2, 1.0)), n.const(CRAG_H)))
 end
 shape.ALPINE_PEAK = RIDGE_AMP[1] + RIDGE_AMP[2] + RIDGE_AMP[3] + RIDGE_AMP[4] + BASE_AMP * shape.NOISE_RANGE
 

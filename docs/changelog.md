@@ -140,6 +140,16 @@ engine commit they landed in, because the mod is written against them.
   the floor blur 64, and the cap 36 blocks over the mean against a range
   two and a half times taller.
 
+### Alpine, fourth cut: detail
+
+- Two finer ridged octaves in the range (ribs 47 and 23 blocks apart,
+  weighted by the coarser as before) and ribs down the walls — the
+  couloirs — from a ridged octave that shows only in the valley mask's
+  transition band. Both in the map.
+- Under the map's resolution the field adds a mid ridged 3D noise, ledges
+  a few blocks high, three times stronger on the walls and crests than on
+  the flats and quiet under the snowfields, beside the fine crags.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.
