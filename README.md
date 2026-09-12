@@ -240,7 +240,9 @@ built one at a time in its own file. Built so far:
       scree, and hollows are carved into granite wall faces the same way —
       a chain of rough spheres going in. Below a rough tree line 90 blocks
       over the dome, firs: tall and thin, a plus-shaped trunk of five cells
-      and a cone of needle pads to a point, tiered on the big ones. The
+      and a cone of needle pads to a point, tiered on the big ones; one in
+      twenty-one is dead wood, a snag or a fallen trunk. Below the snowline
+      sparse tufts of the biome's own grass, darker and bluer. The
       programs that read the maps are compiled at the first alpine chunk,
       after the pre-pass. Outside the map it holds its edge value; tiling
       the whole frost ring is the step after the shape is right. Nothing

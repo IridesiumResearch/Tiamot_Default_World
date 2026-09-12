@@ -79,6 +79,8 @@ somewhere that is not wet).
 | `water` (reused) | eight blocks under each lake's ice, as the BLOCK, not the fluid | until the fluid fill takes a level per column (engine-asks 18) |
 | `fir_log` | the cell-thin trunk of a mountain fir, below the tree line | asked for 2026-09-12 ("a tall thin fir tree") |
 | `fir_needles` | tiers of needle pads, a cone to a point; the leaves' dot look, darker | asked for 2026-09-12 with the fir |
+| `alpine_grass` | sparse tufts below the snowline, the temperate blades in a darker desaturated blue-green with a cold tint | asked for 2026-09-12; a tint is per material, so a hue is a block |
+| `dead_wood` (reused) | snags and fallen firs, one fir in twenty-one | as the woodlands, twice as often |
 
 Nine before the rule, two added under it (both asked for by name). The
 open question is `birch_leaves`: a birch canopy in oak green is wrong up

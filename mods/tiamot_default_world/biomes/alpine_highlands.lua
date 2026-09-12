@@ -162,10 +162,16 @@ local PATCH_DITHER_FREQ = 1 / 5
 local DETAIL_FREQ = 1 / 70
 local DETAIL_H = 0.006                                -- km: up to two and a half blocks on the flats...
 local DETAIL_ROCK = 2.0                               -- ...and three times that on a wall or a crest
-local CRAG_H = 0.0025                                 -- km: the fine roughness
+-- (The fine crags and the ledges' second octave went on 2026-09-12 for
+-- the tick budget: every surface fill re-evaluates the terrain, so an
+-- octave in it is paid nine times a chunk. The clamped steps carry the
+-- small scale now.)
 -- Small clamped steps: a noise clamped hard makes little terraces and
 -- ledges a block or so high wherever it crosses zero — the "slightly
 -- clamped small-scale detail".
+local COVER_CELL = 0.001 / 3                          -- km: one cell, for the cover's near-surface guard
+local TUFT_FREQ = 1.5                                 -- the grass: each cell nearly its own decision
+local TUFT_MIN = 0.22                                 -- sparse: about one column in four blocks
 local STEP_FREQ = 1 / 18
 local STEP_H = 0.0012                                 -- km: a step of about a block
 local STEP_STEEP = 8.0                                -- how hard the clamp is: bigger is a sharper edge
@@ -291,11 +297,10 @@ function shape.alpine_terms()
     -- maps; the mid detail is DETAIL_ROCK times stronger there.
     local rock = n.clamp(n.add(n.mul(n.mul(map_node("alp_floor"), n.sub(n.const(1.0), map_node("alp_floor"))), n.const(WALL_GAIN)),
         map_node("alp_crest")), 0.0, 1.0)
-    local detail = n.mul(n.mul(n.abs(n.noise("alp_detail", DETAIL_FREQ, 2, 1.0)), n.const(DETAIL_H)),
+    local detail = n.mul(n.mul(n.abs(n.noise("alp_detail", DETAIL_FREQ, 1, 1.0)), n.const(DETAIL_H)),
         n.add(n.const(1.0), n.mul(rock, n.const(DETAIL_ROCK))))
     local steps = n.mul(n.clamp(n.mul(n.noise("alp_steps", STEP_FREQ, 1, 1.0), n.const(STEP_STEEP)), -1.0, 1.0), n.const(STEP_H))
-    return n.add(n.add(map_node("alp_height"), n.add(detail, steps)),
-        n.mul(n.abs(n.noise("crag", 1 / 35, 2, 1.0)), n.const(CRAG_H)))
+    return n.add(map_node("alp_height"), n.add(detail, steps))
 end
 shape.ALPINE_PEAK = RIDGE_AMP[1] + RIDGE_AMP[2] + RIDGE_AMP[3] + RIDGE_AMP[4] + BASE_AMP * shape.NOISE_RANGE
 
@@ -352,6 +357,20 @@ tdw.build_biome("alpine_highlands", function(ctx)
     local dirt = shape.compile("biome.alpine.dirt", masked(n.min(n.min(
         shape.terrain_band(0.0, DIRT_DEPTH, false), n.min(low(), dry())),
         patchy("thin_dirt", DIRT_FREQ, DIRT_MIN))))
+    -- The grass: tufts of the biome's own grass, darker and bluer, stood
+    -- on the ground by the cover fill below the snowline where the ground
+    -- faces up, off the crests and the lakes; sparse, in a fine scatter.
+    -- Built as a left-leaning chain, the terrain first: a nested tree of
+    -- minimums holds every pending operand in a buffer, and this one has
+    -- six terms against the engine's eight buffers.
+    -- Terrain FIRST, the constant after: a constant pushed before it holds
+    -- a buffer through the terrain's own peak, which is the ninth.
+    local take = n.add(n.mul(shape.terrain(false), n.const(-1.0)), n.const(COVER_CELL / 2))
+    for _, term in ipairs({ low(), dry(), faces_up(), n.sub(n.const(0.5), crest()),
+        n.sub(n.noise("alp_tuft", TUFT_FREQ, 1, 1.0), n.const(TUFT_MIN)) }) do
+        take = n.min(take, term)
+    end
+    local tufts = shape.compile("biome.alpine.tufts", masked(take))
     -- Above the snowline by aspect, snow four blocks deep where the ground
     -- faces up — not on the walls, not on the crests; and below it, in the
     -- same fill, patches of it that thin out with depth (a patch noise
@@ -365,17 +384,21 @@ tdw.build_biome("alpine_highlands", function(ctx)
     local snow = shape.compile("biome.alpine.snow", masked(n.min(n.min(
         shape.terrain_band(0.0, SNOW_DEPTH, false), n.min(n.max(snow_high(), snow_patches()), dry())),
         n.min(faces_up(), n.sub(n.const(0.5), crest())))))
-    local ice = shape.compile("biome.alpine.ice", masked(n.min(n.min(
-        shape.terrain_band(0.0, ICE_DEPTH, false), n.min(high(), dry())), n.sub(floor(), n.const(0.5)))))
+    -- Ice: the glaciers (three deep on the floors above the snowline) and
+    -- the lakes' sheets, one fill; the lake water written after it takes
+    -- back all but the top block over a lake.
+    local ice = shape.compile("biome.alpine.ice", masked(n.min(shape.terrain_band(0.0, ICE_DEPTH, false),
+        n.max(n.min(n.min(high(), dry()), n.sub(floor(), n.const(0.5))), n.sub(lake(), n.const(0.5))))))
     -- The lakes: a block of ice at the surface and eight of water under
     -- it, written last so they take the lake's top from whatever the fills
     -- above left there.
     local lake_water = shape.compile("biome.alpine.lake_water", masked(n.min(
         shape.terrain_band(LAKE_ICE, LAKE_ICE + LAKE_DEPTH, false), n.sub(lake(), n.const(0.5)))))
-    local lake_ice = shape.compile("biome.alpine.lake_ice", masked(n.min(
-        shape.terrain_band(0.0, LAKE_ICE, false), n.sub(lake(), n.const(0.5)))))
+    -- The granite skin is the biome's soil, which the generator lays under
+    -- the whole surface already; the fill is needed only where another
+    -- biome shares the chunk (its soil goes down as dirt then).
     return {
-        { field = granite, material = blocks.granite },
+        { field = granite, material = blocks.granite, shared_only = true },
         { field = slate, material = blocks.slate },
         { field = scree, material = blocks.creek_bed },
         { field = permafrost, material = blocks.permafrost },
@@ -383,7 +406,7 @@ tdw.build_biome("alpine_highlands", function(ctx)
         { field = snow, material = blocks.snow },
         { field = ice, material = blocks.ice },
         { field = lake_water, material = blocks.water },
-        { field = lake_ice, material = blocks.ice },
+        { cover = blocks.alpine_grass, cells = 2, take = tufts },
     }
 end)
 tdw.biomes.alpine_highlands.soil = blocks.granite
@@ -421,6 +444,7 @@ local TREE_CHANCE = 9          -- one surface block in this many, below the line
 local TREE_APART = 3           -- never within this many blocks of another fir's trunk
 local FIR_SMALL = { 8, 6 }     -- blocks of height: least and extra
 local FIR_BIG = { 18, 11 }
+local DEAD_ONE_IN = 21         -- of the firs, one in this many is dead wood: half snags, half fallen (twice the woodlands' rate)
 local HOLLOW_CHANCE = 120      -- one surface block in this many, in a square that has them; most find no wall within three blocks, cheaply
 local HOLLOW_CELL = 64
 local HOLLOW_CELL_ONE_IN = 2
@@ -429,6 +453,7 @@ local STATS_EVERY = 200
 
 local GRANITE, SLATE = "tiamot_default_world:granite", "tiamot_default_world:slate"
 local FIR_LOG, FIR_NEEDLES = "tiamot_default_world:fir_log", "tiamot_default_world:fir_needles"
+local DEAD = "tiamot_default_world:dead_wood"
 local DIR8 = { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } }
 
 local stats = { turns = 0, boulders = 0, boulder_tries = 0, rocks = 0, rock_tries = 0, firs = 0, fir_tries = 0,
@@ -544,6 +569,90 @@ for cy = 0, 2 do
     PLUS = PLUS | schem.bit(1, cy, 1) | schem.bit(0, cy, 1) | schem.bit(2, cy, 1) | schem.bit(1, cy, 0) | schem.bit(1, cy, 2)
 end
 
+-- A fallen fir lying along x or z: two cells tall and one wide, the
+-- thin trunk it was, merged into the surface block of each column it
+-- crosses so it reads as half sunk. The masks, one per direction.
+local LYING = { x = 0, z = 0 }
+for c = 0, 2 do
+    for cy = 0, 1 do
+        LYING.x = LYING.x | schem.bit(c, cy, 1)
+        LYING.z = LYING.z | schem.bit(1, cy, c)
+    end
+end
+
+-- Dead wood, one fir in DEAD_ONE_IN: a snag — the plus trunk in dead wood,
+-- shorter, its top block holding only some of the plus, a stub or two —
+-- or a fallen trunk.
+local function grow_snag(x, y, z, rng, ground, top_block, big)
+    local height = math.floor(schem.pick(rng, big and FIR_BIG or FIR_SMALL) * (0.4 + rng:below(4) / 10))
+    for dy = 1, height do
+        if not is_air(at(x, y + dy, z)) then
+            stats.headroom = stats.headroom + 1
+            return false
+        end
+    end
+    edits.begin()
+    local base = top_block.occupancy == FULL and ground + 1 or ground
+    for by = base, base + height - 2 do
+        edits.push({ x = x, y = by, z = z }, DEAD, PLUS, true)
+    end
+    -- The broken top: the plus's bottom layer and a couple of cells above.
+    local jag = 0
+    for _, c in ipairs({ { 1, 1 }, { 0, 1 }, { 2, 1 }, { 1, 0 }, { 1, 2 } }) do
+        jag = jag | schem.bit(c[1], 0, c[2])
+    end
+    for _ = 1, 1 + rng:below(3) do
+        jag = jag | schem.bit(1, 1 + rng:below(2), 1)
+    end
+    edits.push({ x = x, y = base + height - 1, z = z }, DEAD, jag, true)
+    -- A stub or two: a bar out from the upper trunk.
+    for _ = 1, 1 + rng:below(2) do
+        local d = DIR8[rng:below(4) * 2 + 1]
+        local sy = base + height - 2 - rng:below(math.max(1, height - 3))
+        if is_air(at(x + d[1], sy, z + d[2])) then
+            local bar = d[1] ~= 0 and LYING.x or LYING.z
+            edits.push({ x = x + d[1], y = sy, z = z + d[2] }, DEAD, bar & ~(schem.bit(1, 1, 1) | schem.bit(0, 1, 1) | schem.bit(2, 1, 1) | schem.bit(1, 1, 0) | schem.bit(1, 1, 2)), true)
+        end
+    end
+    return edits.commit(RESERVE.fir)
+end
+
+local function lay_fir(x, y, z, rng, big)
+    local along_x = rng:next_bool()
+    local dir = rng:next_bool() and 1 or -1
+    local length = big and (8 + rng:below(6)) or (4 + rng:below(4))
+    local mask = along_x and LYING.x or LYING.z
+    local placed = 0
+    edits.begin()
+    for i = 0, length - 1 do
+        local lx = along_x and x + i * dir or x
+        local lz = along_x and z or z + i * dir
+        -- The surface block of this column: partly filled, found from the
+        -- start height down, then up.
+        local ly = nil
+        for dy = 0, -2, -1 do
+            local b = at(lx, y + dy, lz)
+            if b ~= nil and b.occupancy ~= 0 and b.occupancy ~= FULL then
+                ly = y + dy
+                break
+            end
+        end
+        if ly == nil and is_air(at(lx, y, lz)) then
+            local under = at(lx, y - 1, lz)
+            if under ~= nil and under.occupancy == FULL then ly = y end
+        end
+        if ly ~= nil then
+            edits.push({ x = lx, y = ly, z = lz }, DEAD, mask, true)
+            placed = placed + 1
+        end
+    end
+    if placed < 3 then
+        edits.commit(RESERVE.fir)                        -- an empty-enough batch: commit clears it
+        return false
+    end
+    return edits.commit(RESERVE.fir)
+end
+
 -- A fir: tall and thin. A plus-shaped trunk, bare for the lowest sixth,
 -- and above that a cone of needle pads — flat rough ellipsoids shrinking
 -- from the skirt to a point — every block on a small tree, every other
@@ -561,9 +670,21 @@ local function grow_fir(x, y, z, rng)
     end
     local big = rng:below(3) == 0
     local height = schem.pick(rng, big and FIR_BIG or FIR_SMALL)
-    if not schem.loaded_box(x - 4, y - 2, z - 4, x + 4, y + height + 3, z + 4) then
+    if not schem.loaded_box(x - 12, y - 2, z - 12, x + 12, y + height + 3, z + 12) then
         stats.unloaded = stats.unloaded + 1
         return false
+    end
+    -- Dead wood, now and then: a snag or a fallen trunk instead.
+    local dead = rng:below(DEAD_ONE_IN) == 0
+    if dead then
+        if fir_near(x, y, z) then
+            stats.spacing = stats.spacing + 1
+            return false
+        end
+        if rng:next_bool() then
+            return grow_snag(x, y, z, rng, ground, top, big)
+        end
+        return lay_fir(x, y, z, rng, big)
     end
     for dy = 1, height do
         if not is_air(at(x, y + dy, z)) then

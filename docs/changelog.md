@@ -208,6 +208,24 @@ engine commit they landed in, because the mod is written against them.
   asks it for its own reserve, so a queue full of firs never starves the
   rare things.
 
+### Alpine, eighth cut: the tick budget, dead firs, grass
+
+- The tick budget: an alpine chunk ran nine surface fills, each
+  re-evaluating the whole terrain. Now seven: the granite skin fill runs
+  only where another biome shares the chunk (the generator lays the
+  biome's soil under the surface already), and the lake ice is folded
+  into the glacier ice fill by a `max` (the lake water written after
+  takes back all but the top block). The terrain itself is cheaper: the
+  fine crags are gone and the ledge detail is one octave, since an octave
+  in the terrain is paid once per fill.
+- Dead firs, one in twenty-one — twice the woodlands' rate: half snags
+  (the plus trunk in dead wood, shorter, a broken top and a stub or two),
+  half fallen trunks lying along x or z, merged into the surface.
+- Grass: sparse tufts of `alpine_grass` stood by the cover fill below the
+  snowline where the ground faces up, off the crests and lakes — the
+  temperate blades in a darker, desaturated blue-green with its own cold
+  tint, shorter, wind-flattened.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

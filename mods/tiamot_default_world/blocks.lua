@@ -28,6 +28,9 @@ local STEP = { step = "core:step" }
 local ROCK = { strength = 0.20, scale = 128 }
 local SOIL = { strength = 0.28, scale = 96 }
 local GREEN = { strength = 0.32, scale = 192, low = { 0.76, 1.0, 0.64 }, high = { 1.0, 0.90, 0.66 } }
+-- The highlands' grass: darker, bluer, and barely shifting — the cold
+-- end of the green.
+local COLD_GREEN = { strength = 0.16, scale = 192, low = { 0.86, 1.0, 0.98 }, high = { 0.92, 0.94, 1.0 } }
 
 local function block(id, name, description, extra)
     local spec = {
@@ -72,6 +75,10 @@ block("ice", "Glacier ice", "The valley floors and cirques above the snowline.",
 -- trunk and needles in the leaves' round-dot look, a darker blue-green.
 block("fir_log", "Fir log", "Trunk of a mountain fir.", { hardness = 1.0, tint = SOIL })
 block("fir_needles", "Fir needles", "Tiers of them, dark.", { hardness = 0.2, tint = GREEN, cutout = true, sway = true })
+-- The highlands' own grass (asked for 2026-09-12): the temperate tuft's
+-- blades in a darker, desaturated blue-green, with its own cold tint — a
+-- tint is per material, so a different hue is a different block.
+block("alpine_grass", "Alpine grass", "Sparse, dark, wind-flattened tufts.", { hardness = 0.1, tint = COLD_GREEN, passable = true, sway = true, billboard = "cross" })
 
 -- Ground cover. Cells, not blocks: a fern is two cell layers of a block, a
 -- tuft of grass one to three, a bramble a tangle of cells over a few
