@@ -183,6 +183,24 @@ engine commit they landed in, because the mod is written against them.
   block on a big one (fourteen to twenty-two), so the big ones read as
   tiered. Two new blocks, `fir_log` and `fir_needles`, asked for.
 
+### Alpine, seventh cut: bigger firs on a plus trunk, more of them, more and bigger boulders, snow patches
+
+- Firs a quarter taller and wider, twice as dense (one surface block in
+  nine below the line). The trunk is a plus of five cells in every layer,
+  written as one mask per block, so it is the same all the way up — the
+  thin ellipsoid it was rounded to one cell in some blocks and a plus in
+  others.
+- Boulders twice as often and a little bigger.
+- Below the snowline, patches of snow that thin out with depth: a patch
+  noise against a threshold that rises 120 blocks below the line, so the
+  snow peters out instead of stopping. In the snow fill itself (a `max`
+  node, new in `shape.node`), not a second program.
+- Hollows are carved from stone as well as the granite skin: under four
+  blocks of snow the five-block skin is a seam, and a wall face is mostly
+  the stone body. And each growth draws its chance from its own salt of
+  the hash — a rock chance of one in 45 drawn from the same number as a
+  tree chance of one in 9 was never a rock.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

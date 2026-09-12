@@ -227,7 +227,8 @@ built one at a time in its own file. Built so far:
       (granite with slate seams) but above the snowline almost none shows —
       packed snow four blocks deep wherever the ground faces up — the
       snowline comes down the valleys and goes up the crests, and the walls
-      carry none, from the floor and crest masks — and ice three deep on
+      carry none, from the floor and crest masks; below it, patches that
+      thin out over a hundred blocks or so — and ice three deep on
       the floors and in the cirques, the glaciers; below it
       scree under the crests, permafrost and thin dirt in patches. Lakes,
       medium to large, on a sixth of the floors: the floor under a lake is
@@ -238,8 +239,8 @@ built one at a time in its own file. Built so far:
       small rocks grow by random tick on flat snow, permafrost, dirt and
       scree, and hollows are carved into granite wall faces the same way —
       a chain of rough spheres going in. Below a rough tree line 90 blocks
-      over the dome, firs: tall and thin, a cell-thin trunk and a cone of
-      needle pads to a point, tiered on the big ones. The
+      over the dome, firs: tall and thin, a plus-shaped trunk of five cells
+      and a cone of needle pads to a point, tiered on the big ones. The
       programs that read the maps are compiled at the first alpine chunk,
       after the pre-pass. Outside the map it holds its edge value; tiling
       the whole frost ring is the step after the shape is right. Nothing

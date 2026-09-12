@@ -211,6 +211,7 @@ local function add(a, b) return { op = "add", a = a, b = b } end
 local function sub(a, b) return { op = "sub", a = a, b = b } end
 local function mul(a, b) return { op = "mul", a = a, b = b } end
 local function min(a, b) return { op = "min", a = a, b = b } end
+local function max(a, b) return { op = "max", a = a, b = b } end
 local function clamp(a, lo, hi) return { op = "clamp", a = a, low = lo, high = hi } end
 local function abs(a) return { op = "abs", a = a } end
 -- Every noise node is CLAMPED to +/-NOISE_RANGE of its amplitude. The
@@ -226,7 +227,7 @@ local function noise(stream, frequency, octaves, amplitude)
     local raw = { op = "noise", stream = stream, frequency = frequency, octaves = octaves, amplitude = amplitude }
     return { op = "clamp", a = raw, low = -M.NOISE_RANGE * amplitude, high = M.NOISE_RANGE * amplitude }
 end
-M.node = { const = const, X = X, Y = Y, Z = Z, add = add, sub = sub, mul = mul, min = min, clamp = clamp, abs = abs, noise = noise }
+M.node = { const = const, X = X, Y = Y, Z = Z, add = add, sub = sub, mul = mul, min = min, max = max, clamp = clamp, abs = abs, noise = noise }
 
 -- Shared subexpressions (each call builds a fresh tree) ----------------------
 -- r^2 in km^2: seven ops and three buffers.

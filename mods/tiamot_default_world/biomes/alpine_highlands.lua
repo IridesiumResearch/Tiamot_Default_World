@@ -130,6 +130,13 @@ local SNOW_WANDER = 0.06                              -- km of noise amplitude (
 local SNOW_WANDER_FREQ = 1 / 60
 local SNOW_FLECK = 0.05
 local SNOW_FLECK_FREQ = 1 / 9
+-- Below the line, patches of snow that thin out with depth: a patch noise
+-- against a threshold that rises SNOW_PATCH_FADE per km below the line,
+-- so the snow does not stop at the line but peters out over a hundred
+-- blocks or so. In the snow fill, so as deep as the snow.
+local SNOW_PATCH_FREQ = 1 / 40
+local SNOW_PATCH_T = 0.02                             -- near the line about half the ground is patch
+local SNOW_PATCH_FADE = 1 / 0.12                      -- the threshold up by 1 (past the noise) 120 blocks below
 local SNOW_VALLEY_DROP = 0.08                         -- km: how much lower the snow reaches down a valley
 local SNOW_CREST_RAISE = 0.10                         -- km: how much higher it must be to lie on a crest
 local SNOW_DEPTH = 0.004                              -- km: four blocks of packed snow
@@ -345,11 +352,18 @@ tdw.build_biome("alpine_highlands", function(ctx)
     local dirt = shape.compile("biome.alpine.dirt", masked(n.min(n.min(
         shape.terrain_band(0.0, DIRT_DEPTH, false), n.min(low(), dry())),
         patchy("thin_dirt", DIRT_FREQ, DIRT_MIN))))
-    -- Above the snowline by aspect: snow four blocks deep where the ground
-    -- faces up — not on the walls, not on the crests — and ice three deep
-    -- on the floors: the glaciers. Not on the lakes, which are their own.
+    -- Above the snowline by aspect, snow four blocks deep where the ground
+    -- faces up — not on the walls, not on the crests; and below it, in the
+    -- same fill, patches of it that thin out with depth (a patch noise
+    -- against a threshold that rises SNOW_PATCH_FADE per km below the
+    -- line). Ice three deep on the floors: the glaciers. Not on the lakes,
+    -- which are their own.
+    local function snow_patches()
+        return n.sub(n.noise("snow_patch", SNOW_PATCH_FREQ, 2, 1.0),
+            n.add(n.const(SNOW_PATCH_T), n.mul(n.mul(snow_high(), n.const(-1.0)), n.const(SNOW_PATCH_FADE))))
+    end
     local snow = shape.compile("biome.alpine.snow", masked(n.min(n.min(
-        shape.terrain_band(0.0, SNOW_DEPTH, false), n.min(snow_high(), dry())),
+        shape.terrain_band(0.0, SNOW_DEPTH, false), n.min(n.max(snow_high(), snow_patches()), dry())),
         n.min(faces_up(), n.sub(n.const(0.5), crest())))))
     local ice = shape.compile("biome.alpine.ice", masked(n.min(n.min(
         shape.terrain_band(0.0, ICE_DEPTH, false), n.min(high(), dry())), n.sub(floor(), n.const(0.5)))))
@@ -386,12 +400,15 @@ tdw.biomes.alpine_highlands.soil = blocks.granite
 local edits, schem, rocks = tdw.edits, tdw.schem, tdw.rocks
 local at, hash = schem.at, schem.hash
 local FULL = game.OCCUPANCY_FULL
-local RESERVE = 6
+-- The edit queue's reserve for each kind: what may still be queued past
+-- the common limit. Firs are the common thing and get none; hollows are
+-- rare and get the most, so a full queue of firs never starves them.
+local RESERVE = { fir = 0, rock = 2, boulder = 3, hollow = 6 }
 
-local BOULDER_CHANCE = 80      -- one surface block in this many, in a square that has them
+local BOULDER_CHANCE = 40      -- one surface block in this many, in a square that has them
 local BOULDER_CELL = 48        -- squares this wide...
 local BOULDER_CELL_ONE_IN = 2  -- ...one in this many has boulders
-local BOULDER_R = { 1.1, 1.5 } -- half-width, blocks: least and extra
+local BOULDER_R = { 1.4, 1.8 } -- half-width, blocks: least and extra
 local ROCK_CHANCE = 45         -- small rocks, everywhere flat: one surface block in this many
 local ROCK_R = { 0.5, 0.5 }    -- half-width, blocks: least and extra
 -- Firs, below a rough tree line: TREELINE blocks over the base dome,
@@ -400,11 +417,11 @@ local ROCK_R = { 0.5, 0.5 }    -- half-width, blocks: least and extra
 local TREELINE = 90
 local TREELINE_JITTER = 15
 local TREELINE_CELL = 24
-local TREE_CHANCE = 18         -- one surface block in this many, below the line
+local TREE_CHANCE = 9          -- one surface block in this many, below the line
 local TREE_APART = 3           -- never within this many blocks of another fir's trunk
-local FIR_SMALL = { 6, 5 }     -- blocks of height: least and extra
-local FIR_BIG = { 14, 9 }
-local HOLLOW_CHANCE = 300      -- one wall block in this many, in a square that has them
+local FIR_SMALL = { 8, 6 }     -- blocks of height: least and extra
+local FIR_BIG = { 18, 11 }
+local HOLLOW_CHANCE = 60       -- one rock block in this many, in a square that has them: most are buried and refused after a few reads
 local HOLLOW_CELL = 64
 local HOLLOW_CELL_ONE_IN = 2
 local HOLLOW_R = { 1.6, 1.4 }  -- the first sphere's half-width: least and extra
@@ -424,7 +441,8 @@ end
 local function is_air(b) return b ~= nil and b.occupancy == 0 end
 local function is_fir(b) return b ~= nil and b.occupancy ~= 0 and b.material == blocks.fir_log end
 local function is_rock(b)
-    return b ~= nil and b.occupancy ~= 0 and (b.material == blocks.granite or b.material == blocks.slate)
+    return b ~= nil and b.occupancy ~= 0
+        and (b.material == blocks.granite or b.material == blocks.slate or b.material == blocks.stone)
 end
 -- Whether a tick here is this biome's: everywhere, or in the frost ring.
 local function mine(x, z)
@@ -449,7 +467,7 @@ local function flat_at(x, y, z)
 end
 
 local function place_boulder(x, y, z, rng)
-    if not edits.room(RESERVE) then
+    if not edits.room(RESERVE.boulder) then
         stats.no_room = stats.no_room + 1
         return false
     end
@@ -472,12 +490,12 @@ local function place_boulder(x, y, z, rng)
         rocks.place_rock(material, x, surface, z, r, rng,
             { cuts = 1 + rng:below(2), buried = 0.3 + rng:below(3) / 10, squat = 0.6 + rng:below(4) / 10 })
     end
-    return edits.commit(RESERVE)
+    return edits.commit(RESERVE.boulder)
 end
 
 -- A small rock: a lone stone half a block or so across, on the flats.
 local function place_small_rock(x, y, z, rng)
-    if not edits.room(RESERVE) then
+    if not edits.room(RESERVE.rock) then
         stats.no_room = stats.no_room + 1
         return false
     end
@@ -495,7 +513,7 @@ local function place_small_rock(x, y, z, rng)
     edits.begin()
     rocks.place_rock(material, x, surface, z, ROCK_R[1] + rng:below(6) / 10 * ROCK_R[2], rng,
         { cuts = rng:below(2), buried = 0.3 + rng:below(3) / 10, squat = 0.7 + rng:below(3) / 10 })
-    return edits.commit(RESERVE)
+    return edits.commit(RESERVE.rock)
 end
 
 -- Height of a surface block over the base dome, in blocks.
@@ -520,13 +538,22 @@ local function fir_near(x, y, z)
     return false
 end
 
--- A fir: tall and thin. A cell-thin trunk, bare for the lowest sixth, and
--- above that a cone of needle pads — flat rough ellipsoids shrinking from
--- the skirt to a point — every block on a small tree, every other block
--- on a big one, so the big ones read as tiered. Needles first, the trunk
--- last so wood wins any cell both claim.
+-- The trunk's cross-section: the middle cell column and the four beside
+-- it, a plus, in every layer of the block. One mask, written per block,
+-- so the trunk is the same plus all the way up — an ellipsoid thin enough
+-- to be a trunk rounded to one cell in some blocks and a plus in others.
+local PLUS = 0
+for cy = 0, 2 do
+    PLUS = PLUS | schem.bit(1, cy, 1) | schem.bit(0, cy, 1) | schem.bit(2, cy, 1) | schem.bit(1, cy, 0) | schem.bit(1, cy, 2)
+end
+
+-- A fir: tall and thin. A plus-shaped trunk, bare for the lowest sixth,
+-- and above that a cone of needle pads — flat rough ellipsoids shrinking
+-- from the skirt to a point — every block on a small tree, every other
+-- block on a big one, so the big ones read as tiered. Needles first, the
+-- trunk last so wood wins any cell both claim.
 local function grow_fir(x, y, z, rng)
-    if not edits.room(RESERVE) then
+    if not edits.room(RESERVE.fir) then
         stats.no_room = stats.no_room + 1
         return false
     end
@@ -552,7 +579,7 @@ local function grow_fir(x, y, z, rng)
         return false
     end
     local surface = ground + (top.occupancy == FULL and 1.0 or 0.6)
-    local base_r = big and (1.6 + rng:below(5) / 10) or (1.0 + rng:below(4) / 10)
+    local base_r = big and (2.0 + rng:below(6) / 10) or (1.25 + rng:below(5) / 10)
     local skirt = math.max(1, math.floor(height / 6))
     local every = big and 2 or 1
     edits.begin()
@@ -562,17 +589,20 @@ local function grow_fir(x, y, z, rng)
         schem.push_ellipsoid(FIR_NEEDLES, x + 0.5, surface + i + 0.5, z + 0.5, r, 0.55, r, { rough = 0.3, jitter = rng })
     end
     schem.push_ellipsoid(FIR_NEEDLES, x + 0.5, surface + height + 0.3, z + 0.5, 0.45, 0.9, 0.45, { rough = 0.2 })
-    for i = 0, height - 1 do
-        schem.push_ellipsoid(FIR_LOG, x + 0.5, surface + i + 0.5, z + 0.5, 0.4, 0.6, 0.4, { over_whole = true })
+    -- The trunk: from the block the surface is in (or the one above a
+    -- whole block) up through the pads, merged so the needles stay.
+    local base = top.occupancy == FULL and ground + 1 or ground
+    for by = base, base + height - 1 do
+        edits.push({ x = x, y = by, z = z }, FIR_LOG, PLUS, true)
     end
-    return edits.commit(RESERVE)
+    return edits.commit(RESERVE.fir)
 end
 
 -- A hollow: from a granite block that is a wall face — air on one side
 -- with more air beyond and above it, rock behind — a chain of two to four
 -- rough spheres carved inward, each a little smaller, wandering a little.
 local function carve_hollow(x, y, z, rng)
-    if not edits.room(RESERVE) then
+    if not edits.room(RESERVE.hollow) then
         stats.no_room = stats.no_room + 1
         return false
     end
@@ -606,7 +636,7 @@ local function carve_hollow(x, y, z, rng)
         cy = cy - 0.2 + rng:below(3) * 0.2
         r = r * (0.85 + rng:below(3) / 10)
     end
-    return edits.commit(RESERVE)
+    return edits.commit(RESERVE.hollow)
 end
 
 local function try(name, fn, x, y, z)
@@ -626,11 +656,14 @@ local function on_surface(x, y, z)
     stats.turns = stats.turns + 1
     -- Below the tree line a fir first; then the boulders, in their
     -- squares; then the small rocks, everywhere.
+    -- Each kind draws from its own salt of the hash: a chance of one in 45
+    -- drawn from the same number as a chance of one in 9 is never a rock,
+    -- because 45 is 9 times 5 and the tree took it first.
     if over_dome(x, y, z) < treeline_at(x, z) and candidate(x, y, z, TREE_CHANCE) then
         try("fir", grow_fir, x, y, z)
-    elseif candidate(x, y, z, BOULDER_CHANCE) and candidate(x // BOULDER_CELL, 29, z // BOULDER_CELL, BOULDER_CELL_ONE_IN) then
+    elseif candidate(x, y + 1000, z, BOULDER_CHANCE) and candidate(x // BOULDER_CELL, 29, z // BOULDER_CELL, BOULDER_CELL_ONE_IN) then
         try("boulder", place_boulder, x, y, z)
-    elseif candidate(x, y, z, ROCK_CHANCE) then
+    elseif candidate(x, y + 2000, z, ROCK_CHANCE) then
         try("rock", place_small_rock, x, y, z)
     end
     return true
@@ -648,8 +681,13 @@ local function on_rock(x, y, z)
     try("hollow", carve_hollow, x, y, z)
     return true
 end
+-- Stone as well as the skin: the skin is granite five blocks deep and the
+-- snow takes four of them, so granite is a thin seam and its ticks rare;
+-- a wall face is mostly the stone body under it. A buried stone tick is
+-- refused by the face test after a few reads.
 tdw.on_random_tick(blocks.granite, on_rock)
 tdw.on_random_tick(blocks.slate, on_rock)
+tdw.on_random_tick(blocks.stone, on_rock)
 
 local since = 0
 tdw.on_tick(function(dt_ticks)
