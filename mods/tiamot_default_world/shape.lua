@@ -399,12 +399,15 @@ end
 -- they leave the plain and the blend out and keep the ops for the body.
 function M.terrain(flank)
     local relief = mul(relief_mask(), noise("relief", M.RELIEF_FREQ, M.RELIEF_OCTAVES, M.RELIEF_AMP))
-    local detail = noise("detail", M.DETAIL_FREQ, M.DETAIL_OCTAVES, M.DETAIL_AMP)
+    -- The world's own hills: two octaves every surface program pays. The
+    -- alpine map and its ledges carry that scale themselves, so the alpine
+    -- mode leaves them out — a third of the noise in every alpine fill.
+    local mode = flank and "wet" or M.terrain_mode or M.default_mode()
+    local detail = mode == "alpine" and const(0.0) or noise("detail", M.DETAIL_FREQ, M.DETAIL_OCTAVES, M.DETAIL_AMP)
     if not flank then
         relief = mul(relief, plain_mask())
     end
     local shape = add(relief, detail)
-    local mode = flank and "wet" or M.terrain_mode or M.default_mode()
     if mode == "wet" then
         shape = add(shape, wet_terms())
     elseif mode == "dry" then

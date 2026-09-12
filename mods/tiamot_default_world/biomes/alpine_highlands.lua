@@ -109,10 +109,10 @@ local CREST_K = 8
 -- Lakes: where the lake noise is over LAKE_T, on the floors; its edge
 -- crosses in 1/LAKE_K of the noise. About a fifth of the floors, in
 -- bodies a hundred and fifty to three hundred blocks across.
-local LAKE_FREQ = 1 / 450
-local LAKE_T = 0.10
+local LAKE_FREQ = 1 / 700
+local LAKE_T = 0.06
 local LAKE_K = 15
-local LAKE_BLUR = 10                                  -- samples (160 blocks): a lake lies level
+local LAKE_BLUR = 14                                  -- samples (224 blocks): a lake lies level
 local LAKE_DEPTH = 0.008                              -- km: eight blocks of water under the ice
 local LAKE_ICE = 0.001                                -- km: one block of ice on top
 
@@ -150,9 +150,17 @@ local SCREE_FREQ = 1 / 50
 local SCREE_MIN = -0.05
 local PERMAFROST_FREQ = 1 / 140
 local PERMAFROST_MIN = 0.05
+-- Dirt over most of the ground below the snowline that faces up, and
+-- turf (the `grass` block) over most of that below the tree line: the
+-- granite shows on about a third of it, the walls and the crests and
+-- the patches these leave.
 local DIRT_FREQ = 1 / 80
-local DIRT_MIN = 0.14
-local DIRT_DEPTH = 0.0015
+local DIRT_MIN = -0.08
+local DIRT_DEPTH = 0.003                              -- km: three blocks
+local TREELINE = 90                                   -- blocks over the base dome: turf and firs below (the firs read it at runtime)
+local TURF_FREQ = 1 / 60
+local TURF_MIN = -0.02
+local TURF_DEPTH = 0.001                              -- km: the top block of the dirt
 local PATCH_DITHER = 0.18                             -- noise amplitude (+/- half) at PATCH_DITHER_FREQ, added before the threshold
 local PATCH_DITHER_FREQ = 1 / 5
 -- The field's own detail, under the map's resolution: a mid ridged noise
@@ -171,7 +179,7 @@ local DETAIL_ROCK = 2.0                               -- ...and three times that
 -- clamped small-scale detail".
 local COVER_CELL = 0.001 / 3                          -- km: one cell, for the cover's near-surface guard
 local TUFT_FREQ = 1.5                                 -- the grass: each cell nearly its own decision
-local TUFT_MIN = 0.22                                 -- sparse: about one column in four blocks
+local TUFT_MIN = 0.30                                 -- sparse: a third of the 0.22 cut, a column in a dozen blocks
 local STEP_FREQ = 1 / 18
 local STEP_H = 0.0012                                 -- km: a step of about a block
 local STEP_STEEP = 8.0                                -- how hard the clamp is: bigger is a sharper edge
@@ -355,8 +363,15 @@ tdw.build_biome("alpine_highlands", function(ctx)
     local permafrost = shape.compile("biome.alpine.permafrost", masked(n.min(n.min(top(), n.min(low(), dry())),
         patchy("permafrost", PERMAFROST_FREQ, PERMAFROST_MIN))))
     local dirt = shape.compile("biome.alpine.dirt", masked(n.min(n.min(
-        shape.terrain_band(0.0, DIRT_DEPTH, false), n.min(low(), dry())),
+        shape.terrain_band(0.0, DIRT_DEPTH, false), n.min(n.min(low(), dry()), faces_up())),
         patchy("thin_dirt", DIRT_FREQ, DIRT_MIN))))
+    -- Turf over the dirt below the tree line (the same height the trees
+    -- read at runtime, here as the map's height against TREELINE), where
+    -- the ground faces up, in its own patches.
+    local turf = shape.compile("biome.alpine.turf", masked(n.min(n.min(
+        shape.terrain_band(0.0, TURF_DEPTH, false),
+        n.min(n.min(n.sub(n.const(TREELINE / 1000), map_node("alp_height")), dry()), faces_up())),
+        n.min(patchy("thin_dirt", DIRT_FREQ, DIRT_MIN), patchy("turf", TURF_FREQ, TURF_MIN)))))
     -- The grass: tufts of the biome's own grass, darker and bluer, stood
     -- on the ground by the cover fill below the snowline where the ground
     -- faces up, off the crests and the lakes; sparse, in a fine scatter.
@@ -403,6 +418,7 @@ tdw.build_biome("alpine_highlands", function(ctx)
         { field = scree, material = blocks.creek_bed },
         { field = permafrost, material = blocks.permafrost },
         { field = dirt, material = blocks.dirt },
+        { field = turf, material = blocks.grass },
         { field = snow, material = blocks.snow },
         { field = ice, material = blocks.ice },
         { field = lake_water, material = blocks.water },
@@ -431,16 +447,15 @@ local RESERVE = { fir = 0, rock = 2, boulder = 3, hollow = 6 }
 local BOULDER_CHANCE = 40      -- one surface block in this many, in a square that has them
 local BOULDER_CELL = 48        -- squares this wide...
 local BOULDER_CELL_ONE_IN = 2  -- ...one in this many has boulders
-local BOULDER_R = { 1.4, 1.8 } -- half-width, blocks: least and extra
+local BOULDER_R = { 2.8, 3.6 } -- half-width, blocks: least and extra (doubled 2026-09-12)
 local ROCK_CHANCE = 45         -- small rocks, everywhere flat: one surface block in this many
 local ROCK_R = { 0.5, 0.5 }    -- half-width, blocks: least and extra
 -- Firs, below a rough tree line: TREELINE blocks over the base dome,
 -- jittered TREELINE_JITTER either way per TREELINE_CELL square. Tall and
 -- thin; one in three is a big one.
-local TREELINE = 90
 local TREELINE_JITTER = 15
 local TREELINE_CELL = 24
-local TREE_CHANCE = 9          -- one surface block in this many, below the line
+local TREE_CHANCE = 5          -- one surface block in this many, below the line: a forest, held apart by TREE_APART (one in three cost twenty milliseconds of tries a tick)
 local TREE_APART = 3           -- never within this many blocks of another fir's trunk
 local FIR_SMALL = { 8, 6 }     -- blocks of height: least and extra
 local FIR_BIG = { 18, 11 }
@@ -668,9 +683,16 @@ local function grow_fir(x, y, z, rng)
         stats.unloaded = stats.unloaded + 1
         return false
     end
+    -- The block above first: a tick on buried snow is most tries, and one
+    -- read settles it before the loaded box and the spacing scan.
+    if not is_air(at(x, y + 1, z)) then
+        stats.headroom = stats.headroom + 1
+        return false
+    end
     local big = rng:below(3) == 0
     local height = schem.pick(rng, big and FIR_BIG or FIR_SMALL)
-    if not schem.loaded_box(x - 12, y - 2, z - 12, x + 12, y + height + 3, z + 12) then
+    local reach = big and 12 or 6
+    if not schem.loaded_box(x - reach, y - 2, z - reach, x + reach, y + height + 3, z + reach) then
         stats.unloaded = stats.unloaded + 1
         return false
     end
@@ -811,7 +833,7 @@ local function on_surface(x, y, z)
     end
     return true
 end
-for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed }) do
+for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed, blocks.grass }) do
     tdw.on_random_tick(material, on_surface)
 end
 

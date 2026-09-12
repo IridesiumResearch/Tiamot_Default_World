@@ -16,6 +16,32 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
+## 19. One terrain evaluation for many materials (2026-09-12)
+
+**Seen.** An alpine chunk takes fifty milliseconds and more to generate,
+past the whole tick's budget, every tick a chunk is served. The chunk
+runs eight surface fills and a cover, and EVERY one re-evaluates the
+terrain program — six octaves of noise a sample — because a fill is one
+program and one material, and the material's condition is a band of the
+terrain plus its own patch noise. Ten evaluations of the same field.
+
+**Why the mod cannot do it.** A program cannot name another's result; a
+subtree used twice is evaluated twice (no dup, no memo). The mod has
+already cut what it can: fewer fills, fewer octaves in the terrain, the
+world's detail left out under the alpine map.
+
+**Ask.** A fill that maps ONE program's value to a table of materials:
+`buf:fill_palette(field, { { low, high, material }, ... }, options)` —
+the field evaluated once per sample, each cell taking the material whose
+range its value falls in, or left as it was. A mod then writes its
+surface as one program whose value is a code: the depth band of the
+terrain and the patch noises combined into a number, `max` over layers of
+a code times a clamped condition, with the later layer the larger code.
+The alpine surface would be two programs (the terrain's solid and stone,
+and the palette) instead of ten, and the chunk five times cheaper.
+Failing that, a per-generate cache keyed by program identity would help
+less and cost nothing in the API.
+
 ## 18. A fluid fill by heightmap (2026-09-12)
 
 **Wanted.** Frozen lakes on the alpine valley floors: an ice sheet with

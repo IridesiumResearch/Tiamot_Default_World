@@ -226,6 +226,27 @@ engine commit they landed in, because the mod is written against them.
   temperate blades in a darker, desaturated blue-green with its own cold
   tint, shorter, wind-flattened.
 
+### Alpine, ninth cut: a third the grass, three times the trees, boulders twice the size, dirt and turf, bigger lakes
+
+- Grass a third as common; firs one surface block in three below the
+  line (a forest, held apart by the spacing); boulders twice the size;
+  lakes larger and more of them.
+- Granite about a third as common on the surface: dirt three blocks deep
+  over most ground below the snowline that faces up, and turf (the
+  `grass` block) over most of that below the tree line, so the granite
+  shows on the walls, the crests, and the patches these leave. The
+  surface tick grows on turf too.
+- Engine: the client stops drawing sprites (grass, bushes) beyond seven
+  chunks and cutout foliage (leaves, needles) beyond eleven, measured to
+  the chunk's centre. This is the frame's cost, not the server's tick.
+- The tick: a single alpine chunk took over fifty milliseconds to
+  generate. The world's own two detail octaves are left out of the alpine
+  terrain (the map and the ledges carry that scale), a third of the noise
+  in every alpine fill; tree tries check the block above first and size
+  their loaded box to the tree, and are one in five rather than three.
+  The remaining cost is structural — every fill re-evaluates the terrain
+  — and is engine ask 19, a palette fill: one evaluation, many materials.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

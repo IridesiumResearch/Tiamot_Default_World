@@ -81,6 +81,7 @@ somewhere that is not wet).
 | `fir_needles` | tiers of needle pads, a cone to a point; the leaves' dot look, darker | asked for 2026-09-12 with the fir |
 | `alpine_grass` | sparse tufts below the snowline, the temperate blades in a darker desaturated blue-green with a cold tint | asked for 2026-09-12; a tint is per material, so a hue is a block |
 | `dead_wood` (reused) | snags and fallen firs, one fir in twenty-one | as the woodlands, twice as often |
+| `grass` (reused) | turf over the dirt below the tree line | 2026-09-12: granite to a third of the surface |
 
 Nine before the rule, two added under it (both asked for by name). The
 open question is `birch_leaves`: a birch canopy in oak green is wrong up
