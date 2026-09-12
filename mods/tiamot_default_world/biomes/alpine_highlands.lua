@@ -421,7 +421,7 @@ local TREE_CHANCE = 9          -- one surface block in this many, below the line
 local TREE_APART = 3           -- never within this many blocks of another fir's trunk
 local FIR_SMALL = { 8, 6 }     -- blocks of height: least and extra
 local FIR_BIG = { 18, 11 }
-local HOLLOW_CHANCE = 60       -- one rock block in this many, in a square that has them: most are buried and refused after a few reads
+local HOLLOW_CHANCE = 120      -- one surface block in this many, in a square that has them; most find no wall within three blocks, cheaply
 local HOLLOW_CELL = 64
 local HOLLOW_CELL_ONE_IN = 2
 local HOLLOW_R = { 1.6, 1.4 }  -- the first sphere's half-width: least and extra
@@ -432,7 +432,8 @@ local FIR_LOG, FIR_NEEDLES = "tiamot_default_world:fir_log", "tiamot_default_wor
 local DIR8 = { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } }
 
 local stats = { turns = 0, boulders = 0, boulder_tries = 0, rocks = 0, rock_tries = 0, firs = 0, fir_tries = 0,
-    hollows = 0, hollow_tries = 0, flat = 0, wall = 0, headroom = 0, spacing = 0, unloaded = 0, no_room = 0, errors = 0 }
+    hollows = 0, hollow_tries = 0, hollow_room = 0, hollow_unloaded = 0,
+    flat = 0, wall = 0, headroom = 0, spacing = 0, unloaded = 0, no_room = 0, errors = 0 }
 local last_error = nil
 
 local function candidate(x, y, z, one_in)
@@ -440,10 +441,6 @@ local function candidate(x, y, z, one_in)
 end
 local function is_air(b) return b ~= nil and b.occupancy == 0 end
 local function is_fir(b) return b ~= nil and b.occupancy ~= 0 and b.material == blocks.fir_log end
-local function is_rock(b)
-    return b ~= nil and b.occupancy ~= 0
-        and (b.material == blocks.granite or b.material == blocks.slate or b.material == blocks.stone)
-end
 -- Whether a tick here is this biome's: everywhere, or in the frost ring.
 local function mine(x, z)
     local only = tdw.config.everywhere
@@ -598,42 +595,65 @@ local function grow_fir(x, y, z, rng)
     return edits.commit(RESERVE.fir)
 end
 
--- A hollow: from a granite block that is a wall face — air on one side
--- with more air beyond and above it, rock behind — a chain of two to four
--- rough spheres carved inward, each a little smaller, wandering a little.
+-- A hollow: from a SURFACE tick, a wall found by looking three blocks out
+-- each way — where the ground stands WALL_RISE or more higher there is a
+-- face between — and a chain of two to four rough spheres carved into it
+-- at the foot, each a little smaller, wandering a little: a small cavern.
+-- (A tick on rock itself was tried first and found faces almost never:
+-- the random tick picks through the whole loaded volume, and a face is a
+-- vanishing share of the stone.)
+local WALL_RISE = 5
+-- The surface at (x, z) looking well above the hint: the rocks module's
+-- probe scans two blocks up, and a wall five blocks higher is above its
+-- window, which read as unloaded. nil only when a read is.
+local function ground_at(x, z, hint)
+    local above = at(x, hint + 13, z)
+    for yy = hint + 12, hint - 6, -1 do
+        local b = at(x, yy, z)
+        if b == nil or above == nil then return nil end
+        if b.occupancy ~= 0 and above.occupancy == 0 then return yy end
+        above = b
+    end
+    return hint - 6
+end
 local function carve_hollow(x, y, z, rng)
     if not edits.room(RESERVE.hollow) then
-        stats.no_room = stats.no_room + 1
+        stats.hollow_room = stats.hollow_room + 1
         return false
     end
-    local dir = nil
+    local g0 = ground_at(x, z, y)
+    if g0 == nil then
+        stats.hollow_unloaded = stats.hollow_unloaded + 1
+        return false
+    end
+    local dir, rise = nil, 0
     for _, d in ipairs(DIR8) do
-        local out, back = at(x + d[1], y, z + d[2]), at(x - d[1], y, z - d[2])
-        if out == nil or back == nil then
-            stats.unloaded = stats.unloaded + 1
+        local g = ground_at(x + 3 * d[1], z + 3 * d[2], y)
+        if g == nil then
+            stats.hollow_unloaded = stats.hollow_unloaded + 1
             return false
         end
-        if is_air(out) and is_rock(back) and (is_air(at(x + 2 * d[1], y, z + 2 * d[2])) or is_air(at(x + d[1], y + 1, z + d[2]))) then
-            dir = d
-            break
+        if g - g0 > rise then
+            dir, rise = d, g - g0
         end
     end
-    if dir == nil then
+    if dir == nil or rise < WALL_RISE then
         stats.wall = stats.wall + 1
         return false
     end
-    if not schem.loaded_box(x - 8, y - 6, z - 8, x + 8, y + 6, z + 8) then
-        stats.unloaded = stats.unloaded + 1
+    if not schem.loaded_box(x - 7, y - 4, z - 7, x + 7, y + 6, z + 7) then
+        stats.hollow_unloaded = stats.hollow_unloaded + 1
         return false
     end
     edits.begin()
     local r = HOLLOW_R[1] + rng:below(6) / 10 * HOLLOW_R[2]
-    local cx, cy, cz = x + 0.5 - dir[1] * 0.5, y + 0.6, z + 0.5 - dir[2] * 0.5
+    -- Start a block out from the tick, at the wall's foot, and go in.
+    local cx, cy, cz = x + 0.5 + dir[1] * 1.5, g0 + 1.4 + r * 0.5, z + 0.5 + dir[2] * 1.5
     for _ = 1, 2 + rng:below(3) do
         schem.push_ellipsoid("engine:air", cx, cy, cz, r, r * 0.8, r, { carve = true, rough = 0.3 })
-        cx = cx - dir[1] * r * 1.2 + (rng:below(3) - 1) * 0.5
-        cz = cz - dir[2] * r * 1.2 + (rng:below(3) - 1) * 0.5
-        cy = cy - 0.2 + rng:below(3) * 0.2
+        cx = cx + dir[1] * r * 1.2 + (rng:below(3) - 1) * 0.5
+        cz = cz + dir[2] * r * 1.2 + (rng:below(3) - 1) * 0.5
+        cy = cy + rng:below(3) * 0.2
         r = r * (0.85 + rng:below(3) / 10)
     end
     return edits.commit(RESERVE.hollow)
@@ -665,6 +685,8 @@ local function on_surface(x, y, z)
         try("boulder", place_boulder, x, y, z)
     elseif candidate(x, y + 2000, z, ROCK_CHANCE) then
         try("rock", place_small_rock, x, y, z)
+    elseif candidate(x, y + 3000, z, HOLLOW_CHANCE) and candidate(x // HOLLOW_CELL, 31, z // HOLLOW_CELL, HOLLOW_CELL_ONE_IN) then
+        try("hollow", carve_hollow, x, y, z)
     end
     return true
 end
@@ -672,22 +694,6 @@ for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.
     tdw.on_random_tick(material, on_surface)
 end
 
-local function on_rock(x, y, z)
-    if not mine(x, z) then return false end
-    stats.turns = stats.turns + 1
-    if not (candidate(x, y, z, HOLLOW_CHANCE) and candidate(x // HOLLOW_CELL, 31, z // HOLLOW_CELL, HOLLOW_CELL_ONE_IN)) then
-        return true
-    end
-    try("hollow", carve_hollow, x, y, z)
-    return true
-end
--- Stone as well as the skin: the skin is granite five blocks deep and the
--- snow takes four of them, so granite is a thin seam and its ticks rare;
--- a wall face is mostly the stone body under it. A buried stone tick is
--- refused by the face test after a few reads.
-tdw.on_random_tick(blocks.granite, on_rock)
-tdw.on_random_tick(blocks.slate, on_rock)
-tdw.on_random_tick(blocks.stone, on_rock)
 
 local since = 0
 tdw.on_tick(function(dt_ticks)
@@ -696,9 +702,9 @@ tdw.on_tick(function(dt_ticks)
     since = 0
     if stats.turns == 0 then return end
     game.log(string.format(
-        "tiamot_default_world alpine: %d turns, %d firs of %d, %d boulders of %d, %d rocks of %d, %d hollows of %d; refused: flat %d, not a wall %d, headroom %d, spacing %d, room %d, unloaded %d; errors %d (%s)",
+        "tiamot_default_world alpine: %d turns, %d firs of %d, %d boulders of %d, %d rocks of %d, %d hollows of %d (no wall %d, room %d, unloaded %d); refused: flat %d, headroom %d, spacing %d, room %d, unloaded %d; errors %d (%s)",
         stats.turns, stats.firs, stats.fir_tries, stats.boulders, stats.boulder_tries, stats.rocks, stats.rock_tries,
-        stats.hollows, stats.hollow_tries, stats.flat, stats.wall, stats.headroom, stats.spacing, stats.no_room,
-        stats.unloaded, stats.errors, last_error or "none"))
+        stats.hollows, stats.hollow_tries, stats.wall, stats.hollow_room, stats.hollow_unloaded,
+        stats.flat, stats.headroom, stats.spacing, stats.no_room, stats.unloaded, stats.errors, last_error or "none"))
     for key in pairs(stats) do stats[key] = 0 end
 end)

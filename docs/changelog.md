@@ -195,11 +195,18 @@ engine commit they landed in, because the mod is written against them.
   noise against a threshold that rises 120 blocks below the line, so the
   snow peters out instead of stopping. In the snow fill itself (a `max`
   node, new in `shape.node`), not a second program.
-- Hollows are carved from stone as well as the granite skin: under four
-  blocks of snow the five-block skin is a seam, and a wall face is mostly
-  the stone body. And each growth draws its chance from its own salt of
-  the hash — a rock chance of one in 45 drawn from the same number as a
-  tree chance of one in 9 was never a rock.
+- Hollows start from a SURFACE tick now: it looks three blocks out each
+  way with a probe that sees twelve blocks up, and where the ground stands
+  five or more higher there is a wall to carve into at its foot. A tick
+  on rock itself found faces almost never — the random tick picks through
+  the whole loaded volume and a face is a vanishing share of the stone —
+  and the rocks module's own probe scans only two blocks up, so a wall
+  read as unloaded. Each growth draws its chance from its own salt of the
+  hash: a rock chance of one in 45 drawn from the same number as a tree
+  chance of one in 9 was never a rock. The shared edit queue lands five
+  batches a second and holds twenty (from three and twelve), and each kind
+  asks it for its own reserve, so a queue full of firs never starves the
+  rare things.
 
 ### Housekeeping
 
