@@ -79,6 +79,9 @@ block("fir_needles", "Fir needles", "Tiers of them, dark.", { hardness = 0.2, ti
 -- blades in a darker, desaturated blue-green, with its own cold tint — a
 -- tint is per material, so a different hue is a different block.
 block("alpine_grass", "Alpine grass", "Sparse, dark, wind-flattened tufts.", { hardness = 0.1, tint = COLD_GREEN, passable = true, sway = true, billboard = "cross" })
+-- The highlands' turf: the `grass` block's role in the temperate ring, in
+-- the same cold blue-green as the tufts that stand on it (2026-09-12).
+block("alpine_turf", "Alpine turf", "Thin cold turf over the highland dirt.", { hardness = 0.5, tint = COLD_GREEN })
 
 -- Ground cover. Cells, not blocks: a fern is two cell layers of a block, a
 -- tuft of grass one to three, a bramble a tangle of cells over a few

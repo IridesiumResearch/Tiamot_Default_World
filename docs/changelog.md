@@ -247,6 +247,13 @@ engine commit they landed in, because the mod is written against them.
   The remaining cost is structural — every fill re-evaluates the terrain
   — and is engine ask 19, a palette fill: one evaluation, many materials.
 
+### Alpine, tenth cut: more and bigger boulders, cold turf
+
+- Boulders twice as often again and three tenths bigger.
+- The turf is `alpine_turf`, a new block in the same cold blue-green tint
+  as the alpine grass that stands on it; the shared `grass` block carries
+  the temperate tint and a tint is per material.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

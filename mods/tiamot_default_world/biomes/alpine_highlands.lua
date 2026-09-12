@@ -151,7 +151,7 @@ local SCREE_MIN = -0.05
 local PERMAFROST_FREQ = 1 / 140
 local PERMAFROST_MIN = 0.05
 -- Dirt over most of the ground below the snowline that faces up, and
--- turf (the `grass` block) over most of that below the tree line: the
+-- turf (`alpine_turf`, the cold-tinted turf) over most of that below the tree line: the
 -- granite shows on about a third of it, the walls and the crests and
 -- the patches these leave.
 local DIRT_FREQ = 1 / 80
@@ -418,7 +418,7 @@ tdw.build_biome("alpine_highlands", function(ctx)
         { field = scree, material = blocks.creek_bed },
         { field = permafrost, material = blocks.permafrost },
         { field = dirt, material = blocks.dirt },
-        { field = turf, material = blocks.grass },
+        { field = turf, material = blocks.alpine_turf },
         { field = snow, material = blocks.snow },
         { field = ice, material = blocks.ice },
         { field = lake_water, material = blocks.water },
@@ -444,10 +444,10 @@ local FULL = game.OCCUPANCY_FULL
 -- rare and get the most, so a full queue of firs never starves them.
 local RESERVE = { fir = 0, rock = 2, boulder = 3, hollow = 6 }
 
-local BOULDER_CHANCE = 40      -- one surface block in this many, in a square that has them
+local BOULDER_CHANCE = 20      -- one surface block in this many, in a square that has them
 local BOULDER_CELL = 48        -- squares this wide...
 local BOULDER_CELL_ONE_IN = 2  -- ...one in this many has boulders
-local BOULDER_R = { 2.8, 3.6 } -- half-width, blocks: least and extra (doubled 2026-09-12)
+local BOULDER_R = { 3.6, 4.7 } -- half-width, blocks: least and extra (doubled 2026-09-12, then up three tenths)
 local ROCK_CHANCE = 45         -- small rocks, everywhere flat: one surface block in this many
 local ROCK_R = { 0.5, 0.5 }    -- half-width, blocks: least and extra
 -- Firs, below a rough tree line: TREELINE blocks over the base dome,
@@ -833,7 +833,7 @@ local function on_surface(x, y, z)
     end
     return true
 end
-for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed, blocks.grass }) do
+for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed, blocks.alpine_turf }) do
     tdw.on_random_tick(material, on_surface)
 end
 

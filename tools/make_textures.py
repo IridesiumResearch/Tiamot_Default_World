@@ -51,6 +51,7 @@ BLOCKS = {
     "fir_log":        ( 68,  56,  46,  0),
     "fir_needles":    ( 40,  68,  54,  0),
     "alpine_grass":   ( 62,  92,  86,  0),
+    "alpine_turf":    ( 56,  84,  78,  0),
     "rose_blooms":    (176,  42,  64,  0),
     "water":          ( 58,  92, 110,  0),
     "gloam_stone":    ( 74,  78,  90,  0),

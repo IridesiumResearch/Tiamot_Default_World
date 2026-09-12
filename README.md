@@ -242,9 +242,10 @@ built one at a time in its own file. Built so far:
       over the dome, firs: tall and thin, a plus-shaped trunk of five cells
       and a cone of needle pads to a point, tiered on the big ones; one in
       twenty-one is dead wood, a snag or a fallen trunk. Below the snowline
-      dirt over most ground that faces up and turf over most of that below
-      the tree line, so granite shows on the walls and crests; sparse tufts
-      of the biome's own grass, darker and bluer. The
+      dirt over most ground that faces up and cold-tinted turf over most of
+      that below the tree line, so granite shows on the walls and crests;
+      sparse tufts of the biome's own grass, darker and bluer, the same
+      cast as the turf. The
       programs that read the maps are compiled at the first alpine chunk,
       after the pre-pass. Outside the map it holds its edge value; tiling
       the whole frost ring is the step after the shape is right. Nothing
