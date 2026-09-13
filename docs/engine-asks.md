@@ -16,7 +16,7 @@ engine that `buf:set_subnode` already preserves a uniform block's other
 cells, so generation-time embedding needs nothing new, only the
 cross-chunk pass.*
 
-## 19. One terrain evaluation for many materials (2026-09-12)
+## 19. One terrain evaluation for many materials (2026-09-12) — LANDED twice: `fill_palette` (engine 44e7790, one value against thresholds) and `fill_layers` (a code per block and depth bands, this tree); the alpine surface uses the latter
 
 **Seen.** An alpine chunk takes fifty milliseconds and more to generate,
 past the whole tick's budget, every tick a chunk is served. The chunk

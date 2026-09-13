@@ -187,7 +187,12 @@ game.register_on_generate(function(buf, pos)
             end
             for _, biome in ipairs(found) do
                 for _, fill in ipairs(fills_of(biome)) do
-                    if fill.field and (not fill.shared_only or #found > 1) then
+                    if fill.layers then
+                        -- Every layer of the surface from one evaluation of
+                        -- the terrain and one of a code field (engine
+                        -- `fill_layers`); eight fills were eight evaluations.
+                        buf:fill_layers(fill.depth, fill.code, fill.entries)
+                    elseif fill.field and (not fill.shared_only or #found > 1) then
                         -- A fill may ask for its own detail.
                         buf:fill_density(fill.field, fill.material, fill.detail or DETAIL)
                     end

@@ -248,6 +248,9 @@ built one at a time in its own file. Built so far:
       that below the tree line, so granite shows on the walls and crests;
       sparse tufts of the biome's own grass, darker and bluer, the same
       cast as the turf. The
+      Every surface material but the granite is one fill, the engine's
+      `fill_layers`: the terrain evaluated once and a per-block code field
+      once, a table of code and depth band to material. The
       programs that read the maps are compiled at the first alpine chunk,
       after the pre-pass. Outside the map it holds its edge value; tiling
       the whole frost ring is the step after the shape is right. Nothing

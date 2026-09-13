@@ -85,8 +85,9 @@ function tdw.build_biome(id, build)
         for i, fill in ipairs(fills) do
             -- A fill paints where its field is positive; a cover stands a
             -- run of cells on the surface the fills made, where its take is.
-            assert((fill.field and fill.material) or (fill.cover and fill.take),
-                "fill " .. i .. " of " .. id .. " needs field and material, or cover and take")
+            assert((fill.field and fill.material) or (fill.cover and fill.take)
+                or (fill.layers and fill.depth and fill.code and fill.entries),
+                "fill " .. i .. " of " .. id .. " needs field and material, cover and take, or layers with depth, code and entries")
         end
         return fills
     end

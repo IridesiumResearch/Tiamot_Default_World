@@ -157,7 +157,7 @@ local PERMAFROST_MIN = 0.05
 local DIRT_FREQ = 1 / 80
 local DIRT_MIN = -0.08
 local DIRT_DEPTH = 0.003                              -- km: three blocks
-local TREELINE = 90                                   -- blocks over the base dome: turf and firs below (the firs read it at runtime)
+local TREELINE = 200                                  -- blocks over the base dome: turf and firs below (the firs read it at runtime); 90 left most of the range bare
 local TURF_FREQ = 1 / 60
 local TURF_MIN = -0.02
 local TURF_DEPTH = 0.001                              -- km: the top block of the dirt
@@ -353,75 +353,90 @@ tdw.build_biome("alpine_highlands", function(ctx)
         return n.sub(n.add(n.noise(stream, freq, 2, 1.0), n.noise(stream .. "_dither", PATCH_DITHER_FREQ, 1, PATCH_DITHER)),
             n.const(min))
     end
-    -- The rock: granite as the skin, slate in seams through it.
+    -- The rock: granite as the skin, laid by the generator as the biome's
+    -- soil; the fill is needed only where another biome shares the chunk.
     local granite = shape.compile("biome.alpine.granite", masked(top()))
-    local slate = shape.compile("biome.alpine.slate", masked(n.min(top(), patchy("slate", SLATE_FREQ, SLATE_MIN))))
-    -- The lower slopes, below the snowline: scree under the crests, in
-    -- tongues; permafrost and thin dirt in patches elsewhere.
-    local scree = shape.compile("biome.alpine.scree", masked(n.min(n.min(top(), n.min(low(), dry())),
-        n.min(n.sub(crest(), n.const(0.3)), patchy("scree", SCREE_FREQ, SCREE_MIN)))))
-    local permafrost = shape.compile("biome.alpine.permafrost", masked(n.min(n.min(top(), n.min(low(), dry())),
-        patchy("permafrost", PERMAFROST_FREQ, PERMAFROST_MIN))))
-    local dirt = shape.compile("biome.alpine.dirt", masked(n.min(n.min(
-        shape.terrain_band(0.0, DIRT_DEPTH, false), n.min(n.min(low(), dry()), faces_up())),
-        patchy("thin_dirt", DIRT_FREQ, DIRT_MIN))))
-    -- Turf over the dirt below the tree line (the same height the trees
-    -- read at runtime, here as the map's height against TREELINE), where
-    -- the ground faces up, in its own patches.
-    local turf = shape.compile("biome.alpine.turf", masked(n.min(n.min(
-        shape.terrain_band(0.0, TURF_DEPTH, false),
-        n.min(n.min(n.sub(n.const(TREELINE / 1000), map_node("alp_height")), dry()), faces_up())),
-        n.min(patchy("thin_dirt", DIRT_FREQ, DIRT_MIN), patchy("turf", TURF_FREQ, TURF_MIN)))))
+
     -- The grass: tufts of the biome's own grass, darker and bluer, stood
     -- on the ground by the cover fill below the snowline where the ground
     -- faces up, off the crests and the lakes; sparse, in a fine scatter.
     -- Built as a left-leaning chain, the terrain first: a nested tree of
     -- minimums holds every pending operand in a buffer, and this one has
-    -- six terms against the engine's eight buffers.
-    -- Terrain FIRST, the constant after: a constant pushed before it holds
-    -- a buffer through the terrain's own peak, which is the ninth.
+    -- six terms against the engine's eight buffers. Terrain FIRST, the
+    -- constant after: a constant pushed before it holds a buffer through
+    -- the terrain's own peak, which is the ninth.
     local take = n.add(n.mul(shape.terrain(false), n.const(-1.0)), n.const(COVER_CELL / 2))
     for _, term in ipairs({ low(), dry(), faces_up(), n.sub(n.const(0.5), crest()),
         n.sub(n.noise("alp_tuft", TUFT_FREQ, 1, 1.0), n.const(TUFT_MIN)) }) do
         take = n.min(take, term)
     end
     local tufts = shape.compile("biome.alpine.tufts", masked(take))
-    -- Above the snowline by aspect, snow four blocks deep where the ground
-    -- faces up — not on the walls, not on the crests; and below it, in the
-    -- same fill, patches of it that thin out with depth (a patch noise
-    -- against a threshold that rises SNOW_PATCH_FADE per km below the
-    -- line). Ice three deep on the floors: the glaciers. Not on the lakes,
-    -- which are their own.
+    -- Snow below the line, in patches that thin out with depth.
     local function snow_patches()
         return n.sub(n.noise("snow_patch", SNOW_PATCH_FREQ, 2, 1.0),
             n.add(n.const(SNOW_PATCH_T), n.mul(n.mul(snow_high(), n.const(-1.0)), n.const(SNOW_PATCH_FADE))))
     end
-    local snow = shape.compile("biome.alpine.snow", masked(n.min(n.min(
-        shape.terrain_band(0.0, SNOW_DEPTH, false), n.min(n.max(snow_high(), snow_patches()), dry())),
-        n.min(faces_up(), n.sub(n.const(0.5), crest())))))
-    -- Ice: the glaciers (three deep on the floors above the snowline) and
-    -- the lakes' sheets, one fill; the lake water written after it takes
-    -- back all but the top block over a lake.
-    local ice = shape.compile("biome.alpine.ice", masked(n.min(shape.terrain_band(0.0, ICE_DEPTH, false),
-        n.max(n.min(n.min(high(), dry()), n.sub(floor(), n.const(0.5))), n.sub(lake(), n.const(0.5))))))
-    -- The lakes: a block of ice at the surface and eight of water under
-    -- it, written last so they take the lake's top from whatever the fills
-    -- above left there.
-    local lake_water = shape.compile("biome.alpine.lake_water", masked(n.min(
-        shape.terrain_band(LAKE_ICE, LAKE_ICE + LAKE_DEPTH, false), n.sub(lake(), n.const(0.5)))))
-    -- The granite skin is the biome's soil, which the generator lays under
-    -- the whole surface already; the fill is needed only where another
-    -- biome shares the chunk (its soil goes down as dirt then).
+
+    -- Every other surface material from ONE evaluation of the terrain
+    -- (`buf:fill_layers`, engine): a CODE field names, per block, which set
+    -- of depth bands the block gets, and the depth is the terrain, smooth
+    -- at the cells. The code is the greatest of k * step(condition_k) over
+    -- the layers, later layers larger, so a later layer wins where two
+    -- apply — the order the separate fills had. Where no condition holds
+    -- the code is 0 and the granite shows through.
+    local function step(field)
+        return n.clamp(n.mul(field, n.const(1e4)), 0.0, 1.0)
+    end
+    local function chain(first, rest, op)
+        local acc = first
+        for _, term in ipairs(rest) do acc = op(acc, term) end
+        return acc
+    end
+    local conditions = {
+        -- 1: slate seams through the rock.
+        patchy("slate", SLATE_FREQ, SLATE_MIN),
+        -- 2: scree on the risers and cirque walls below the snowline.
+        chain(low(), { dry(), n.sub(crest(), n.const(0.3)), patchy("scree", SCREE_FREQ, SCREE_MIN) }, n.min),
+        -- 3: permafrost in patches below the snowline.
+        chain(low(), { dry(), patchy("permafrost", PERMAFROST_FREQ, PERMAFROST_MIN) }, n.min),
+        -- 4: dirt over most ground below the snowline that faces up.
+        chain(low(), { dry(), faces_up(), patchy("thin_dirt", DIRT_FREQ, DIRT_MIN) }, n.min),
+        -- 5: turf over the dirt below the tree line.
+        chain(low(), { dry(), faces_up(), patchy("thin_dirt", DIRT_FREQ, DIRT_MIN),
+            n.sub(n.const(TREELINE / 1000), map_node("alp_height")), patchy("turf", TURF_FREQ, TURF_MIN) }, n.min),
+        -- 6: snow above the line by aspect, and its patches below.
+        chain(n.max(snow_high(), snow_patches()), { dry(), faces_up(), n.sub(n.const(0.5), crest()) }, n.min),
+        -- 7: the glaciers: ice on the floors above the snowline.
+        chain(high(), { dry(), n.sub(floor(), n.const(0.5)) }, n.min),
+        -- 8: the lakes.
+        n.sub(lake(), n.const(0.5)),
+    }
+    local code = n.const(0.0)
+    for k, condition in ipairs(conditions) do
+        code = n.max(code, n.mul(step(condition), n.const(k)))
+    end
+    local mask = tdw.biome_mask(n, "frost", false)
+    if mask then
+        code = n.mul(code, step(mask))
+    end
+    local depth = shape.compile("biome.alpine.depth", shape.terrain(false))
+    local codes = shape.compile("biome.alpine.codes", code)
+    local km = 0.001
+    local entries = {
+        { code = 1, to = 3 * km, material = blocks.slate },
+        { code = 2, to = 3 * km, material = blocks.creek_bed },
+        { code = 3, to = 3 * km, material = blocks.permafrost },
+        { code = 4, to = 3 * km, material = blocks.dirt },
+        { code = 5, to = 1 * km, material = blocks.alpine_turf },
+        { code = 5, from = 1 * km, to = 3 * km, material = blocks.dirt },
+        { code = 6, to = SNOW_DEPTH, material = blocks.snow },
+        { code = 7, to = ICE_DEPTH, material = blocks.ice },
+        { code = 8, to = LAKE_ICE, material = blocks.ice },
+        { code = 8, from = LAKE_ICE, to = LAKE_ICE + LAKE_DEPTH, material = blocks.water },
+    }
     return {
         { field = granite, material = blocks.granite, shared_only = true },
-        { field = slate, material = blocks.slate },
-        { field = scree, material = blocks.creek_bed },
-        { field = permafrost, material = blocks.permafrost },
-        { field = dirt, material = blocks.dirt },
-        { field = turf, material = blocks.alpine_turf },
-        { field = snow, material = blocks.snow },
-        { field = ice, material = blocks.ice },
-        { field = lake_water, material = blocks.water },
+        { layers = true, depth = depth, code = codes, entries = entries },
         { cover = blocks.alpine_grass, cells = 2, take = tufts },
     }
 end)
@@ -453,9 +468,9 @@ local ROCK_R = { 0.5, 0.5 }    -- half-width, blocks: least and extra
 -- Firs, below a rough tree line: TREELINE blocks over the base dome,
 -- jittered TREELINE_JITTER either way per TREELINE_CELL square. Tall and
 -- thin; one in three is a big one.
-local TREELINE_JITTER = 15
+local TREELINE_JITTER = 40
 local TREELINE_CELL = 24
-local TREE_CHANCE = 5          -- one surface block in this many, below the line: a forest, held apart by TREE_APART (one in three cost twenty milliseconds of tries a tick)
+local TREE_CHANCE = 3          -- one surface block in this many, below the line: the forest fills in within a minute or two of a chunk loading, held apart by TREE_APART; a try is one read when the block above is not air
 local TREE_APART = 3           -- never within this many blocks of another fir's trunk
 local FIR_SMALL = { 8, 6 }     -- blocks of height: least and extra
 local FIR_BIG = { 18, 11 }
@@ -574,13 +589,17 @@ end
 local function treeline_at(x, z)
     return TREELINE + (hash(x // TREELINE_CELL, 7, z // TREELINE_CELL) % (2 * TREELINE_JITTER + 1)) - TREELINE_JITTER
 end
+-- Another fir's trunk within TREE_APART: eight headings, each distance,
+-- two heights — a trunk is at least eight blocks, so a read at one block
+-- up and one at four cannot both miss it. Forty-eight reads, not the
+-- hundred and sixty-eight of a read at every height, which was most of
+-- the mod's tick once the forest had filled in and every try was this.
 local function fir_near(x, y, z)
     for _, d in ipairs(DIR8) do
         for r = 1, TREE_APART do
-            for dy = 0, 6 do
-                if is_fir(at(x + d[1] * r, y + dy, z + d[2] * r)) then
-                    return true
-                end
+            local sx, sz = x + d[1] * r, z + d[2] * r
+            if is_fir(at(sx, y + 1, sz)) or is_fir(at(sx, y + 4, sz)) then
+                return true
             end
         end
     end

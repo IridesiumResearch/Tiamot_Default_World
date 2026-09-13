@@ -265,6 +265,22 @@ engine commit they landed in, because the mod is written against them.
   `crevasse` in chat and one is carved where you stand, to look at.
 - Firs carry a quarter more needles: pads an eighth wider and thicker.
 
+### Alpine, twelfth cut: one fill for the whole surface; the tree line up
+
+- The alpine surface — slate, scree, permafrost, dirt, turf, snow, the
+  glaciers and the lakes — is ONE fill: `buf:fill_layers`, new in the
+  engine beside its palette fill. The terrain is evaluated once, smooth at
+  the cells; a code field evaluated once at block resolution names which
+  set of depth bands each block gets (the greatest of k times a stepped
+  condition, later layers larger); a table maps code and band to
+  material. The engine's palette is a single value against thresholds,
+  right for depth bands and wrong for a category, which the smooth detail
+  would interpolate at every patch edge and at the surface itself. Eight
+  evaluations of the terrain a chunk are one.
+- The tree line up to 200 blocks over the base dome, jittered forty
+  either way, and tries one surface block in two: at 90 most of the range
+  stood above the line, and growth by tick took minutes to fill a chunk.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.
