@@ -31,6 +31,8 @@ local GREEN = { strength = 0.32, scale = 192, low = { 0.76, 1.0, 0.64 }, high = 
 -- The highlands' grass: darker, bluer, and barely shifting — the cold
 -- end of the green.
 local COLD_GREEN = { strength = 0.16, scale = 192, low = { 0.86, 1.0, 0.98 }, high = { 0.92, 0.94, 1.0 } }
+-- The ice: cold blue, shifting between a deeper blue and a paler one.
+local COLD_BLUE = { strength = 0.18, scale = 96, low = { 0.80, 0.90, 1.0 }, high = { 1.0, 1.0, 1.0 } }
 
 local function block(id, name, description, extra)
     local spec = {
@@ -69,8 +71,8 @@ block("dead_wood", "Dead wood", "Grey, dry, split.", { hardness = 0.6, tint = RO
 -- permafrost in patches, and snow as a crust one cell thick (a cover).
 block("slate", "Slate", "Dark, layered, splits in sheets.", { hardness = 1.4, tint = ROCK })
 block("permafrost", "Permafrost", "Ground frozen hard, grey-brown.", { hardness = 0.9, tint = SOIL })
-block("snow", "Packed snow", "Two blocks of it over everything above the snowline.", { hardness = 0.2, tint = ROCK })
-block("ice", "Glacier ice", "The valley floors and cirques above the snowline.", { hardness = 0.8, tint = ROCK })
+block("snow", "Packed snow", "Eight blocks of it over everything above the snowline, standing four over the ground.", { hardness = 0.2, tint = ROCK })
+block("ice", "Glacier ice", "The valley floors and cirques above the snowline.", { hardness = 0.8, tint = COLD_BLUE })
 -- Firs, for the highlands' tree line (asked for 2026-09-12): a dark
 -- trunk and needles in the leaves' round-dot look, a darker blue-green.
 block("fir_log", "Fir log", "Trunk of a mountain fir.", { hardness = 1.0, tint = SOIL })

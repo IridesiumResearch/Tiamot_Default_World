@@ -74,8 +74,8 @@ somewhere that is not wet).
 |---|---|---|
 | `slate` | seams through the granite, a quarter of the rock | asked for by name 2026-09-11 |
 | `permafrost` | patches of frozen ground off the steep faces | asked for by name 2026-09-11 |
-| `snow` | two blocks deep over everything above the snowline but the crests | asked for by name 2026-09-11 |
-| `ice` | three blocks deep on the valley floors and cirques above the snowline: the glaciers; a block of it over each lake | asked for by name 2026-09-11 |
+| `snow` | eight blocks deep over everything above the snowline but the crests, four of them standing over the ground it lies on | asked for by name 2026-09-11; doubled and stood up 2026-09-12 |
+| `ice` | six blocks deep on the valley floors and cirques above the snowline: the glaciers; a block of it over each lake; cold blue | asked for by name 2026-09-11; cold blue 2026-09-12 |
 | `water` (reused) | eight blocks under each lake's ice, as the BLOCK, not the fluid | until the fluid fill takes a level per column (engine-asks 18) |
 | `fir_log` | the cell-thin trunk of a mountain fir, below the tree line | asked for 2026-09-12 ("a tall thin fir tree") |
 | `fir_needles` | tiers of needle pads, a cone to a point; the leaves' dot look, darker | asked for 2026-09-12 with the fir |

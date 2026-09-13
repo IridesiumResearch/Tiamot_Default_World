@@ -139,8 +139,23 @@ local SNOW_PATCH_T = 0.02                             -- near the line about hal
 local SNOW_PATCH_FADE = 1 / 0.12                      -- the threshold up by 1 (past the noise) 120 blocks below
 local SNOW_VALLEY_DROP = 0.08                         -- km: how much lower the snow reaches down a valley
 local SNOW_CREST_RAISE = 0.10                         -- km: how much higher it must be to lie on a crest
-local SNOW_DEPTH = 0.004                              -- km: four blocks of packed snow
-local ICE_DEPTH = 0.003                               -- km: three blocks of glacier
+local SNOW_DEPTH = 0.008                              -- km: eight blocks of packed snow on the snowfields (doubled 2026-09-12), SNOW_LIFT of them standing over the ground
+local SNOW_PATCH_DEPTH = 0.004                        -- km: the patches below the line stay four deep and flat
+-- The snowfields are a deposit, not a colour: where the snow lies above
+-- the line the ground stands SNOW_LIFT higher, in the terrain itself, so
+-- the snow layer is those blocks and the ones under them, and a
+-- snowfield's edge is a bank a few blocks tall, mottled by the line's
+-- fleck. The lift tapers in over SNOW_LIFT_RAMP of height above the
+-- line, and it leaves the lakes, the walls and the crests over
+-- SNOW_LIFT_GATE of their masks. The patches below the line are not
+-- lifted: a four-block mound at every patch would be a field of lumps,
+-- and the patch noise in every terrain evaluation was a fifth of a
+-- chunk's generation.
+local SNOW_LIFT = 0.004                               -- km: four blocks of the eight stand over the old ground
+local SNOW_LIFT_RAMP = 0.004                          -- km above the (wandering) line for the full lift
+local SNOW_LIFT_GATE = 4.0                            -- 1 / the share of a mask over which the lift comes in
+local BURIED_REACH = 10                               -- blocks: how far up a buried tick looks for its column's surface
+local ICE_DEPTH = 0.006                               -- km: six blocks of glacier (was three: the lift stands the glaciers up too, and the ice must reach under it)
 -- The patches of each material: two octaves rather than one, so a
 -- patch has an irregular outline instead of a blob's, and a fine dither
 -- at the threshold so its edge is speckled rather than drawn.
@@ -300,6 +315,66 @@ end)
 local function map_node(name)
     return { op = "map", map = game.map(map_spec(name)) }
 end
+-- The masks, as the field reads them. Written left-leaning throughout —
+-- the deepest operand first, then one term at a time — because the
+-- stack machine holds every pending operand in one of eight buffers, and
+-- the snow lift below is evaluated inside the terrain with two or three
+-- already held.
+local function crest() return map_node("alp_crest") end
+local function floor() return map_node("alp_floor") end
+local function lake() return map_node("alp_lake") end
+local function dry() return n.sub(n.const(0.5), lake()) end   -- positive off the lakes
+-- The walls: the valley mask's transition band, f(1-f) scaled; and
+-- "faces up": positive off the walls.
+local function wall()
+    return n.mul(n.mul(floor(), n.sub(n.const(1.0), floor())), n.const(WALL_GAIN))
+end
+local function faces_up() return n.add(n.mul(wall(), n.const(-1.0)), n.const(0.5)) end
+-- The height over the snowline by aspect, from the maps alone: height
+-- first, then the line taken off it a term at a time.
+local function snow_base()
+    local h = n.sub(map_node("alp_height"), n.const(SNOWLINE))
+    h = n.add(h, n.mul(floor(), n.const(SNOW_VALLEY_DROP)))
+    return n.sub(h, n.mul(crest(), n.const(SNOW_CREST_RAISE)))
+end
+-- The same, wandering and flecked: positive where the ground is above
+-- the line as it is drawn.
+local function snow_high()
+    local h = n.add(snow_base(), n.noise("snow_wander", SNOW_WANDER_FREQ, 2, SNOW_WANDER))
+    return n.add(h, n.noise("snow_fleck", SNOW_FLECK_FREQ, 1, SNOW_FLECK))
+end
+-- Off the lakes, the walls and the crests: the gates on the snow, each
+-- positive where snow may lie. Applied as a chain of minimums on a field
+-- (`op` is n.min), or, for the lift, as clamped ramps.
+local function snow_gates()
+    return { dry(), faces_up(), n.sub(n.const(0.5), crest()) }
+end
+-- Snow below the line, in patches that thin out with depth: the patch
+-- noise over a threshold that rises SNOW_PATCH_FADE per km below the
+-- line, which is noise - T + FADE * snow_base. (The base, not the flecked
+-- line: three octaves fewer wherever this is evaluated, and the fade is
+-- a hundred-block matter.)
+local function snow_patches()
+    local cover = n.sub(n.add(n.mul(snow_base(), n.const(SNOW_PATCH_FADE)), n.noise("snow_patch", SNOW_PATCH_FREQ, 2, 1.0)),
+        n.const(SNOW_PATCH_T))
+    for _, gate in ipairs(snow_gates()) do cover = n.min(cover, gate) end
+    return cover
+end
+-- The snowfields: above the line, off the lakes, the walls and the
+-- crests. Positive there. The code field steps this; the lift tapers it.
+local function snow_field()
+    local cover = snow_high()
+    for _, gate in ipairs(snow_gates()) do cover = n.min(cover, gate) end
+    return cover
+end
+-- The snow lift: SNOW_LIFT on the snowfields, tapered in. See SNOW_LIFT.
+local function snow_lift()
+    local taper = n.clamp(n.mul(snow_high(), n.const(1 / SNOW_LIFT_RAMP)), 0.0, 1.0)
+    for _, gate in ipairs(snow_gates()) do
+        taper = n.min(taper, n.clamp(n.mul(gate, n.const(SNOW_LIFT_GATE)), 0.0, 1.0))
+    end
+    return n.mul(taper, n.const(SNOW_LIFT))
+end
 function shape.alpine_terms()
     -- Rock: 1 on a wall or a crest, 0 on a floor or a snowfield, from the
     -- maps; the mid detail is DETAIL_ROCK times stronger there.
@@ -308,7 +383,9 @@ function shape.alpine_terms()
     local detail = n.mul(n.mul(n.abs(n.noise("alp_detail", DETAIL_FREQ, 1, 1.0)), n.const(DETAIL_H)),
         n.add(n.const(1.0), n.mul(rock, n.const(DETAIL_ROCK))))
     local steps = n.mul(n.clamp(n.mul(n.noise("alp_steps", STEP_FREQ, 1, 1.0), n.const(STEP_STEEP)), -1.0, 1.0), n.const(STEP_H))
-    return n.add(map_node("alp_height"), n.add(detail, steps))
+    -- The lift FIRST: it is the deepest term, and evaluated first it holds
+    -- one buffer through the rest, the same as the height alone did.
+    return n.add(n.add(n.add(snow_lift(), map_node("alp_height")), detail), steps)
 end
 shape.ALPINE_PEAK = RIDGE_AMP[1] + RIDGE_AMP[2] + RIDGE_AMP[3] + RIDGE_AMP[4] + BASE_AMP * shape.NOISE_RANGE
 
@@ -328,25 +405,8 @@ tdw.build_biome("alpine_highlands", function(ctx)
     local function low()
         return n.sub(n.const(SNOWLINE), map_node("alp_height"))
     end
-    local function crest() return map_node("alp_crest") end
-    local function floor() return map_node("alp_floor") end
-    local function lake() return map_node("alp_lake") end
-    local function dry() return n.sub(n.const(0.5), lake()) end   -- positive off the lakes
-    -- The walls: the valley mask's transition band, f(1-f) scaled; and
-    -- "faces up": positive off the walls.
-    local function wall()
-        return n.mul(n.mul(floor(), n.sub(n.const(1.0), floor())), n.const(WALL_GAIN))
-    end
-    local function faces_up() return n.sub(n.const(0.5), wall()) end
-    -- The snowline by aspect, wandering and flecked: positive where the
-    -- ground is above it.
-    local function snow_high()
-        local line = n.add(n.sub(n.const(SNOWLINE), n.mul(floor(), n.const(SNOW_VALLEY_DROP))),
-            n.mul(crest(), n.const(SNOW_CREST_RAISE)))
-        local broken = n.add(n.noise("snow_wander", SNOW_WANDER_FREQ, 2, SNOW_WANDER),
-            n.noise("snow_fleck", SNOW_FLECK_FREQ, 1, SNOW_FLECK))
-        return n.add(n.sub(map_node("alp_height"), line), broken)
-    end
+    -- (crest, floor, lake, dry, faces_up and the snow are the file's:
+    -- the terrain's snow lift reads them too.)
     -- A patch of a material: three octaves of its noise plus a fine dither,
     -- over its threshold.
     local function patchy(stream, freq, min)
@@ -371,11 +431,6 @@ tdw.build_biome("alpine_highlands", function(ctx)
         take = n.min(take, term)
     end
     local tufts = shape.compile("biome.alpine.tufts", masked(take))
-    -- Snow below the line, in patches that thin out with depth.
-    local function snow_patches()
-        return n.sub(n.noise("snow_patch", SNOW_PATCH_FREQ, 2, 1.0),
-            n.add(n.const(SNOW_PATCH_T), n.mul(n.mul(snow_high(), n.const(-1.0)), n.const(SNOW_PATCH_FADE))))
-    end
 
     -- Every other surface material from ONE evaluation of the terrain
     -- (`buf:fill_layers`, engine): a CODE field names, per block, which set
@@ -404,11 +459,15 @@ tdw.build_biome("alpine_highlands", function(ctx)
         -- 5: turf over the dirt below the tree line.
         chain(low(), { dry(), faces_up(), patchy("thin_dirt", DIRT_FREQ, DIRT_MIN),
             n.sub(n.const(TREELINE / 1000), map_node("alp_height")), patchy("turf", TURF_FREQ, TURF_MIN) }, n.min),
-        -- 6: snow above the line by aspect, and its patches below.
-        chain(n.max(snow_high(), snow_patches()), { dry(), faces_up(), n.sub(n.const(0.5), crest()) }, n.min),
-        -- 7: the glaciers: ice on the floors above the snowline.
+        -- 6: snow in patches below the line, flat.
+        snow_patches(),
+        -- 7: the snowfields above the line by aspect — the same field the
+        -- terrain lifts by SNOW_LIFT, so the layer is the lifted blocks
+        -- and the ones under them.
+        snow_field(),
+        -- 8: the glaciers: ice on the floors above the snowline.
         chain(high(), { dry(), n.sub(floor(), n.const(0.5)) }, n.min),
-        -- 8: the lakes.
+        -- 9: the lakes.
         n.sub(lake(), n.const(0.5)),
     }
     local code = n.const(0.0)
@@ -429,10 +488,11 @@ tdw.build_biome("alpine_highlands", function(ctx)
         { code = 4, to = 3 * km, material = blocks.dirt },
         { code = 5, to = 1 * km, material = blocks.alpine_turf },
         { code = 5, from = 1 * km, to = 3 * km, material = blocks.dirt },
-        { code = 6, to = SNOW_DEPTH, material = blocks.snow },
-        { code = 7, to = ICE_DEPTH, material = blocks.ice },
-        { code = 8, to = LAKE_ICE, material = blocks.ice },
-        { code = 8, from = LAKE_ICE, to = LAKE_ICE + LAKE_DEPTH, material = blocks.water },
+        { code = 6, to = SNOW_PATCH_DEPTH, material = blocks.snow },
+        { code = 7, to = SNOW_DEPTH, material = blocks.snow },
+        { code = 8, to = ICE_DEPTH, material = blocks.ice },
+        { code = 9, to = LAKE_ICE, material = blocks.ice },
+        { code = 9, from = LAKE_ICE, to = LAKE_ICE + LAKE_DEPTH, material = blocks.water },
     }
     return {
         { field = granite, material = blocks.granite, shared_only = true },
@@ -462,7 +522,7 @@ local RESERVE = { fir = 0, rock = 2, boulder = 3, hollow = 6, crevasse = 8 }
 local BOULDER_CHANCE = 20      -- one surface block in this many, in a square that has them
 local BOULDER_CELL = 48        -- squares this wide...
 local BOULDER_CELL_ONE_IN = 2  -- ...one in this many has boulders
-local BOULDER_R = { 3.6, 4.7 } -- half-width, blocks: least and extra (doubled 2026-09-12, then up three tenths)
+local BOULDER_R = { 1.8, 2.35 } -- half-width, blocks: least and extra (halved 2026-09-12: at 3.6 they stood twice their size)
 local ROCK_CHANCE = 45         -- small rocks, everywhere flat: one surface block in this many
 local ROCK_R = { 0.5, 0.5 }    -- half-width, blocks: least and extra
 -- Firs, below a rough tree line: TREELINE blocks over the base dome,
@@ -500,14 +560,35 @@ local DIR8 = { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, {
 local stats = { turns = 0, boulders = 0, boulder_tries = 0, rocks = 0, rock_tries = 0, firs = 0, fir_tries = 0,
     crevasses = 0, crevasse_tries = 0,
     hollows = 0, hollow_tries = 0, hollow_room = 0, hollow_unloaded = 0,
-    flat = 0, wall = 0, headroom = 0, spacing = 0, unloaded = 0, no_room = 0, errors = 0 }
+    flat = 0, wall = 0, headroom = 0, spacing = 0, unloaded = 0, no_room = 0, errors = 0,
+    buried = 0, lost = 0 }
 local last_error = nil
 
 local function candidate(x, y, z, one_in)
     return hash(x, y, z) % one_in == 0
 end
 local function is_air(b) return b ~= nil and b.occupancy == 0 end
-local function is_fir(b) return b ~= nil and b.occupancy ~= 0 and b.material == blocks.fir_log end
+-- Whether a block holds `material` in any cell. A block of one material
+-- names it; a block of two or more names NONE and lists its cells — and
+-- the surface block of most columns is one of those: the grass cover
+-- stands its cells in the top block's air, and a layer boundary can fall
+-- inside a block. Read by name alone, most surfaces were nothing.
+local function holds(b, material)
+    if b == nil or b.occupancy == 0 then return false end
+    if b.material == material then return true end
+    if b.cells then
+        for i = 1, 27 do
+            if b.cells[i] == material then return true end
+        end
+    end
+    return false
+end
+-- Open to a tree: air, or nothing but the grass cover, which a trunk may
+-- stand through (the woodlands learned this first).
+local function is_open(b)
+    return b ~= nil and (b.occupancy == 0 or b.material == blocks.alpine_grass)
+end
+local function is_fir(b) return holds(b, blocks.fir_log) end
 -- Whether a tick here is this biome's: everywhere, or in the frost ring.
 local function mine(x, z)
     local only = tdw.config.everywhere
@@ -632,7 +713,7 @@ end
 local function grow_snag(x, y, z, rng, ground, top_block, big)
     local height = math.floor(schem.pick(rng, big and FIR_BIG or FIR_SMALL) * (0.4 + rng:below(4) / 10))
     for dy = 1, height do
-        if not is_air(at(x, y + dy, z)) then
+        if not is_open(at(x, y + dy, z)) then
             stats.headroom = stats.headroom + 1
             return false
         end
@@ -716,7 +797,7 @@ local function grow_fir(x, y, z, rng)
     end
     -- The block above first: a tick on buried snow is most tries, and one
     -- read settles it before the loaded box and the spacing scan.
-    if not is_air(at(x, y + 1, z)) then
+    if not is_open(at(x, y + 1, z)) then
         stats.headroom = stats.headroom + 1
         return false
     end
@@ -740,7 +821,7 @@ local function grow_fir(x, y, z, rng)
         return lay_fir(x, y, z, rng, big)
     end
     for dy = 1, height do
-        if not is_air(at(x, y + dy, z)) then
+        if not is_open(at(x, y + dy, z)) then
             stats.headroom = stats.headroom + 1
             return false
         end
@@ -849,7 +930,7 @@ local function carve_crevasse(x, y, z, rng, anywhere)
         stats.unloaded = stats.unloaded + 1
         return false
     end
-    if not anywhere and not (b.material == blocks.ice or (b.material == blocks.snow and over_dome(x, y, z) > SNOWLINE * 1000)) then
+    if not anywhere and not (holds(b, blocks.ice) or (holds(b, blocks.snow) and over_dome(x, y, z) > SNOWLINE * 1000)) then
         return false
     end
     local ground = ground_at(x, z, y)
@@ -904,9 +985,52 @@ local function try(name, fn, x, y, z)
     end
 end
 
+-- The materials whose random tick is this biome's surface.
+local SURFACE_MATERIALS = { blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed, blocks.alpine_turf, blocks.ice }
+local IS_SURFACE = {}
+for _, material in ipairs(SURFACE_MATERIALS) do IS_SURFACE[material] = true end
+-- Whether a block is one of this biome's surfaces, in any of its cells.
+local function is_surface_block(b)
+    if b == nil or b.occupancy == 0 then return false end
+    if IS_SURFACE[b.material] then return true end
+    if b.cells then
+        for i = 1, 27 do
+            if IS_SURFACE[b.cells[i]] then return true end
+        end
+    end
+    return false
+end
+-- The surface of the column over a buried block: the block under the
+-- first open one within BURIED_REACH, if it is one of this biome's
+-- surfaces. Nil if not, or if a read is unloaded.
+local function surface_above(x, y, z)
+    for yy = y + 2, y + BURIED_REACH do
+        local b = at(x, yy, z)
+        if b == nil then return nil end
+        if is_open(b) then
+            if is_surface_block(at(x, yy - 1, z)) then return yy - 1 end
+            return nil
+        end
+    end
+    return nil
+end
+
 local function on_surface(x, y, z)
     if not mine(x, z) then return false end
     stats.turns = stats.turns + 1
+    -- A tick on a buried block — seven ticks in eight on snow, which lies
+    -- eight deep — is taken up to the surface of its column, so the whole
+    -- depth of the snow ticks its surface: the forest fills in as fast as
+    -- the edit queue lands it, not at a block in eight. Before this every
+    -- buried tick was a try refused for headroom.
+    if not is_open(at(x, y + 1, z)) then
+        y = surface_above(x, y, z)
+        if y == nil then
+            stats.lost = stats.lost + 1
+            return true
+        end
+        stats.buried = stats.buried + 1
+    end
     -- Below the tree line a fir first; then the boulders, in their
     -- squares; then the small rocks, everywhere.
     -- Each kind draws from its own salt of the hash: a chance of one in 45
@@ -925,7 +1049,7 @@ local function on_surface(x, y, z)
     end
     return true
 end
-for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed, blocks.alpine_turf, blocks.ice }) do
+for _, material in ipairs(SURFACE_MATERIALS) do
     tdw.on_random_tick(material, on_surface)
 end
 
@@ -937,8 +1061,8 @@ tdw.on_tick(function(dt_ticks)
     since = 0
     if stats.turns == 0 then return end
     game.log(string.format(
-        "tiamot_default_world alpine: %d turns, %d firs of %d, %d boulders of %d, %d rocks of %d, %d crevasses of %d, %d hollows of %d (no wall %d, room %d, unloaded %d); refused: flat %d, headroom %d, spacing %d, room %d, unloaded %d; errors %d (%s)",
-        stats.turns, stats.firs, stats.fir_tries, stats.boulders, stats.boulder_tries, stats.rocks, stats.rock_tries,
+        "tiamot_default_world alpine: %d turns (%d buried ticks taken up, %d lost), %d firs of %d, %d boulders of %d, %d rocks of %d, %d crevasses of %d, %d hollows of %d (no wall %d, room %d, unloaded %d); refused: flat %d, headroom %d, spacing %d, room %d, unloaded %d; errors %d (%s)",
+        stats.turns, stats.buried, stats.lost, stats.firs, stats.fir_tries, stats.boulders, stats.boulder_tries, stats.rocks, stats.rock_tries,
         stats.crevasses, stats.crevasse_tries,
         stats.hollows, stats.hollow_tries, stats.wall, stats.hollow_room, stats.hollow_unloaded,
         stats.flat, stats.headroom, stats.spacing, stats.no_room, stats.unloaded, stats.errors, last_error or "none"))

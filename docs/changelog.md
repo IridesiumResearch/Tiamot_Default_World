@@ -281,6 +281,43 @@ engine commit they landed in, because the mod is written against them.
   either way, and tries one surface block in two: at 90 most of the range
   stood above the line, and growth by tick took minutes to fill a chunk.
 
+### Alpine, thirteenth cut: snow as a deposit, the forest fills in, cold ice, boulders halved
+
+- The snowfields are a deposit: where snow lies above the line the
+  terrain itself stands four blocks higher (`snow_lift`, a term of the
+  alpine terrain, tapered in over four blocks of height above the
+  wandering, flecked line, and off the lakes, walls and crests over their
+  masks), and the snow layer there is eight blocks deep — double — so it
+  is those four blocks and four under them, and a snowfield's edge is a
+  bank, mottled by the fleck. The glaciers stand up with it; their ice is
+  six deep so it reaches under the lift. The patches below the line stay
+  flat and four deep: a mound at every patch would be a field of lumps,
+  and the patch noise in every terrain evaluation cost a fifth of a
+  chunk. The patches' fade reads the line from the maps alone, three
+  octaves fewer. The snow's masks moved to file level, written
+  left-leaning, because the lift is evaluated inside the terrain with
+  buffers already held. Chunk generation with the lift: about five
+  milliseconds a chunk, from four.
+- The forest fills in. Two ceilings on it, both raised. The edit queue
+  landed five batches a second across every loaded chunk (a thousand
+  three hundred fir tries in ten seconds, thirty-seven landed, seven
+  hundred refused for room): it lands a batch every tick now and two a
+  tick when it is filling, twenty to forty a second (four a tick built
+  firs faster than the tick could relight them). And a
+  random tick on buried snow — seven in eight of them, now the snow is
+  eight deep — was a try refused for headroom: a buried tick is taken up
+  to the surface of its column, so the whole depth of the snow ticks its
+  surface. And a block of two materials names none (`material` nil,
+  `cells` listed) — which is the surface block of most columns, the
+  grass cover standing its cells in the top block's air — so every read
+  of a surface material is now by cell (`holds`, `is_surface_block`), and
+  the grass cover is open to a trunk, as in the woodlands. The firs stood
+  in patches where the player had waited and nowhere else; growth by tick
+  is still growth by tick, and a chunk's forest is there within a minute
+  of its loading rather than at generation (engine-asks 3).
+- Ice is cold blue: a blue texture and a blue-shifting tint.
+- Boulders halved: they stood twice the size they read on paper.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

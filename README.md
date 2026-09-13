@@ -225,7 +225,9 @@ built one at a time in its own file. Built so far:
       and crests, and fine crags. Two more maps carry
       the floors and the crests for the materials: the mountains are stone
       (granite with slate seams) but above the snowline almost none shows —
-      packed snow four blocks deep wherever the ground faces up — the
+      packed snow eight blocks deep wherever the ground faces up, four of
+      them standing over the ground it lies on, so a snowfield's edge is
+      a bank and not a change of colour — the
       snowline comes down the valleys and goes up the crests, and the walls
       carry none, from the floor and crest masks; below it, patches that
       thin out over a hundred blocks or so — and ice three deep on

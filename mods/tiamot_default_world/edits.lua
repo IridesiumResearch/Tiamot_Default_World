@@ -12,15 +12,20 @@
 -- small laptop was the player being jerked back by the server's corrections.
 --
 -- So edits travel in BATCHES — one structure each — and a batch lands whole,
--- in one tick, with BATCH_EVERY ticks of quiet between batches. A woodland
--- grows a tree or two a second rather than all at once, which is also how a
--- woodland reads.
+-- in one tick. One batch lands a tick; when the queue is filling, up to
+-- BATCH_CATCH_UP of them, one more for every CATCH_UP_PER waiting. A
+-- woodland grows over a minute rather than all at once, which is also how
+-- a woodland reads. (One batch every four ticks, five a second, was the
+-- alpine forest's ceiling: a thousand fir tries in ten seconds landed
+-- forty, and the forest stood in patches where the player had waited.)
 --
 -- `later(ticks, fn)` runs a function after that many ticks: what a pool
 -- needs, since water written into a block that is still solid is cleared by
 -- the next fluid tick.
 
-local BATCH_EVERY = 4          -- ticks between batches: five a second (was seven, three a second, until the alpine firs filled it; a batch lands in about a millisecond)
+local BATCH_EVERY = 1          -- ticks between batches: twenty a second at least (a batch lands in about a millisecond)
+local BATCH_CATCH_UP = 2       -- batches a tick at most, when the queue is filling (four built firs faster than the tick could relight them)
+local CATCH_UP_PER = 10        -- one more batch a tick for every this many waiting
 local MAX_WAITING = 20         -- batches held; past this, growth is refused until they land
 
 local M = {}
@@ -89,11 +94,15 @@ end
 tdw.on_tick(function(dt_ticks)
     cooldown = cooldown - dt_ticks
     if cooldown <= 0 and head <= tail then
-        local batch = batches[head]
-        batches[head] = nil
-        head = head + 1
-        for _, edit in ipairs(batch) do
-            game.set_block(edit[1], edit[2], edit[3], edit[4])
+        local land = math.min(BATCH_CATCH_UP, 1 + M.waiting() // CATCH_UP_PER)
+        for _ = 1, land do
+            if head > tail then break end
+            local batch = batches[head]
+            batches[head] = nil
+            head = head + 1
+            for _, edit in ipairs(batch) do
+                game.set_block(edit[1], edit[2], edit[3], edit[4])
+            end
         end
         cooldown = BATCH_EVERY
         if head > tail then

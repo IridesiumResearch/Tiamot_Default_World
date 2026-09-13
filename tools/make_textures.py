@@ -47,7 +47,7 @@ BLOCKS = {
     "slate":          ( 72,  78,  90,  0),
     "permafrost":     (118, 108,  98,  0),
     "snow":           (228, 232, 236,  0),
-    "ice":            (186, 210, 228,  0),
+    "ice":            (126, 172, 228,  0),   # cold blue (2026-09-12; was a grey-blue near the snow's)
     "fir_log":        ( 68,  56,  46,  0),
     "fir_needles":    ( 40,  68,  54,  0),
     "alpine_grass":   ( 62,  92,  86,  0),
