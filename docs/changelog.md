@@ -254,6 +254,17 @@ engine commit they landed in, because the mod is written against them.
   as the alpine grass that stands on it; the shared `grass` block carries
   the temperate tint and a tint is per material.
 
+### Alpine, eleventh cut: crevasses, more needles
+
+- Crevasses, now and then, on the glaciers and the high snow: a crack
+  fourteen to thirty-four blocks long along x or z, eight to twenty-two
+  deep in the middle and shallowing to its ends, one to three wide, its
+  walls coated with ice — one tall ellipsoid of ice written first and a
+  slightly smaller one carved out of it as air, merged so the ground
+  round it stays. Grown by the surface tick on ice and high snow; say
+  `crevasse` in chat and one is carved where you stand, to look at.
+- Firs carry a quarter more needles: pads an eighth wider and thicker.
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

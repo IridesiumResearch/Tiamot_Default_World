@@ -442,7 +442,7 @@ local FULL = game.OCCUPANCY_FULL
 -- The edit queue's reserve for each kind: what may still be queued past
 -- the common limit. Firs are the common thing and get none; hollows are
 -- rare and get the most, so a full queue of firs never starves them.
-local RESERVE = { fir = 0, rock = 2, boulder = 3, hollow = 6 }
+local RESERVE = { fir = 0, rock = 2, boulder = 3, hollow = 6, crevasse = 8 }
 
 local BOULDER_CHANCE = 20      -- one surface block in this many, in a square that has them
 local BOULDER_CELL = 48        -- squares this wide...
@@ -464,6 +464,17 @@ local HOLLOW_CHANCE = 120      -- one surface block in this many, in a square th
 local HOLLOW_CELL = 64
 local HOLLOW_CELL_ONE_IN = 2
 local HOLLOW_R = { 1.6, 1.4 }  -- the first sphere's half-width: least and extra
+-- Crevasses: now and then, on the glaciers and the high snow, a long
+-- crack down into the ground, ice-coated. One tall ellipsoid of ice
+-- written first and a slightly smaller one carved as air inside it, so
+-- the walls are ice. Along x or z.
+local CREVASSE_CHANCE = 300    -- one ice or high-snow block in this many, in a square that has them
+local CREVASSE_CELL = 128
+local CREVASSE_CELL_ONE_IN = 3
+local CREVASSE_LENGTH = { 14, 20 }  -- blocks: least and extra
+local CREVASSE_DEPTH = { 8, 14 }
+local CREVASSE_HALF = { 0.7, 0.9 }  -- half-width, blocks: least and extra
+local CREVASSE_COAT = 0.7           -- how far past the crack the ice reaches
 local STATS_EVERY = 200
 
 local GRANITE, SLATE = "tiamot_default_world:granite", "tiamot_default_world:slate"
@@ -472,6 +483,7 @@ local DEAD = "tiamot_default_world:dead_wood"
 local DIR8 = { { 1, 0 }, { 1, 1 }, { 0, 1 }, { -1, 1 }, { -1, 0 }, { -1, -1 }, { 0, -1 }, { 1, -1 } }
 
 local stats = { turns = 0, boulders = 0, boulder_tries = 0, rocks = 0, rock_tries = 0, firs = 0, fir_tries = 0,
+    crevasses = 0, crevasse_tries = 0,
     hollows = 0, hollow_tries = 0, hollow_room = 0, hollow_unloaded = 0,
     flat = 0, wall = 0, headroom = 0, spacing = 0, unloaded = 0, no_room = 0, errors = 0 }
 local last_error = nil
@@ -719,14 +731,14 @@ local function grow_fir(x, y, z, rng)
         return false
     end
     local surface = ground + (top.occupancy == FULL and 1.0 or 0.6)
-    local base_r = big and (2.0 + rng:below(6) / 10) or (1.25 + rng:below(5) / 10)
+    local base_r = big and (2.25 + rng:below(7) / 10) or (1.4 + rng:below(6) / 10)   -- up an eighth in width: a quarter more needles
     local skirt = math.max(1, math.floor(height / 6))
     local every = big and 2 or 1
     edits.begin()
     for i = skirt, height - 1, every do
         local t = (i - skirt) / (height - skirt)
         local r = base_r * (1.0 - t) + 0.35
-        schem.push_ellipsoid(FIR_NEEDLES, x + 0.5, surface + i + 0.5, z + 0.5, r, 0.55, r, { rough = 0.3, jitter = rng })
+        schem.push_ellipsoid(FIR_NEEDLES, x + 0.5, surface + i + 0.5, z + 0.5, r, 0.65, r, { rough = 0.3, jitter = rng })
     end
     schem.push_ellipsoid(FIR_NEEDLES, x + 0.5, surface + height + 0.3, z + 0.5, 0.45, 0.9, 0.45, { rough = 0.2 })
     -- The trunk: from the block the surface is in (or the one above a
@@ -802,6 +814,65 @@ local function carve_hollow(x, y, z, rng)
     return edits.commit(RESERVE.hollow)
 end
 
+-- A crevasse: from a tick on ice or high snow, a crack CREVASSE_LENGTH long
+-- along x or z, CREVASSE_DEPTH deep in the middle and shallowing to its
+-- ends (an ellipsoid's profile), one to three blocks wide, its walls
+-- coated with ice. Two writes: ice over the crack's bounds plus the coat,
+-- then the crack carved out of that as air — merged, so the ground round
+-- it stays.
+local function carve_crevasse(x, y, z, rng, anywhere)
+    if not edits.room(RESERVE.crevasse) then
+        stats.no_room = stats.no_room + 1
+        return false
+    end
+    local b = at(x, y, z)
+    if b == nil then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
+    if not anywhere and not (b.material == blocks.ice or (b.material == blocks.snow and over_dome(x, y, z) > SNOWLINE * 1000)) then
+        return false
+    end
+    local ground = ground_at(x, z, y)
+    if ground == nil then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
+    local length = schem.pick(rng, CREVASSE_LENGTH)
+    local depth = schem.pick(rng, CREVASSE_DEPTH)
+    local half = CREVASSE_HALF[1] + rng:below(10) / 10 * CREVASSE_HALF[2]
+    local along_x = rng:next_bool()
+    local reach = length // 2 + 3
+    if not schem.loaded_box(x - reach, ground - depth - 3, z - reach, x + reach, ground + 3, z + reach) then
+        stats.unloaded = stats.unloaded + 1
+        return false
+    end
+    -- Centred a little under the surface so the crack opens at the top:
+    -- the ellipsoid's top sits a block over the ground, and the carve is
+    -- clipped to what is there.
+    local cx, cy, cz = x + 0.5, ground + 1.0 - depth * 0.5, z + 0.5
+    local rx = along_x and length * 0.5 or half
+    local rz = along_x and half or length * 0.5
+    edits.begin()
+    schem.push_ellipsoid("tiamot_default_world:ice", cx, cy, cz, rx + CREVASSE_COAT, depth * 0.5 + CREVASSE_COAT, rz + CREVASSE_COAT,
+        { rough = 0.25, over_whole = true })
+    schem.push_ellipsoid("engine:air", cx, cy, cz, rx, depth * 0.5, rz, { carve = true, rough = 0.35 })
+    return edits.commit(RESERVE.crevasse)
+end
+
+-- Say `crevasse` in chat and one is carved where you stand, whatever the
+-- ground: a way to look at one, and the way the headless test reaches it.
+tdw.on_chat("crevasse", function(player)
+    local body = game.player_entity(player)
+    local entity = body and game.entity(body)
+    local p = entity and entity.pos
+    if p == nil then return end
+    local x, y, z = math.floor(p.x), math.floor(p.y) - 1, math.floor(p.z)
+    local rng = game.rng_stream({ x = x // 16, y = y // 16, z = z // 16, seed = tdw.seed or 0 }, "crevasse:chat:" .. x .. ":" .. z)
+    local ok = carve_crevasse(x, y, z, rng, true)
+    game.log(string.format("tiamot_default_world alpine: crevasse at %d, %d, %d: %s", x, y, z, ok and "carved" or "refused"))
+end)
+
 local function try(name, fn, x, y, z)
     stats[name .. "_tries"] = stats[name .. "_tries"] + 1
     local rng = game.rng_stream({ x = x // 16, y = y // 16, z = z // 16, seed = tdw.seed or 0 }, name .. ":" .. x .. ":" .. y .. ":" .. z)
@@ -822,7 +893,9 @@ local function on_surface(x, y, z)
     -- Each kind draws from its own salt of the hash: a chance of one in 45
     -- drawn from the same number as a chance of one in 9 is never a rock,
     -- because 45 is 9 times 5 and the tree took it first.
-    if over_dome(x, y, z) < treeline_at(x, z) and candidate(x, y, z, TREE_CHANCE) then
+    if candidate(x, y + 4000, z, CREVASSE_CHANCE) and candidate(x // CREVASSE_CELL, 37, z // CREVASSE_CELL, CREVASSE_CELL_ONE_IN) then
+        try("crevasse", carve_crevasse, x, y, z)
+    elseif over_dome(x, y, z) < treeline_at(x, z) and candidate(x, y, z, TREE_CHANCE) then
         try("fir", grow_fir, x, y, z)
     elseif candidate(x, y + 1000, z, BOULDER_CHANCE) and candidate(x // BOULDER_CELL, 29, z // BOULDER_CELL, BOULDER_CELL_ONE_IN) then
         try("boulder", place_boulder, x, y, z)
@@ -833,7 +906,7 @@ local function on_surface(x, y, z)
     end
     return true
 end
-for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed, blocks.alpine_turf }) do
+for _, material in ipairs({ blocks.snow, blocks.permafrost, blocks.dirt, blocks.creek_bed, blocks.alpine_turf, blocks.ice }) do
     tdw.on_random_tick(material, on_surface)
 end
 
@@ -845,8 +918,9 @@ tdw.on_tick(function(dt_ticks)
     since = 0
     if stats.turns == 0 then return end
     game.log(string.format(
-        "tiamot_default_world alpine: %d turns, %d firs of %d, %d boulders of %d, %d rocks of %d, %d hollows of %d (no wall %d, room %d, unloaded %d); refused: flat %d, headroom %d, spacing %d, room %d, unloaded %d; errors %d (%s)",
+        "tiamot_default_world alpine: %d turns, %d firs of %d, %d boulders of %d, %d rocks of %d, %d crevasses of %d, %d hollows of %d (no wall %d, room %d, unloaded %d); refused: flat %d, headroom %d, spacing %d, room %d, unloaded %d; errors %d (%s)",
         stats.turns, stats.firs, stats.fir_tries, stats.boulders, stats.boulder_tries, stats.rocks, stats.rock_tries,
+        stats.crevasses, stats.crevasse_tries,
         stats.hollows, stats.hollow_tries, stats.wall, stats.hollow_room, stats.hollow_unloaded,
         stats.flat, stats.headroom, stats.spacing, stats.no_room, stats.unloaded, stats.errors, last_error or "none"))
     for key in pairs(stats) do stats[key] = 0 end
