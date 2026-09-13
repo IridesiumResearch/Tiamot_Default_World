@@ -13,6 +13,9 @@ tdw.schem = M
 
 local edits = tdw.edits
 local FULL = game.OCCUPANCY_FULL
+-- What a blind push (`opts.blind`) reads instead of the world: nothing
+-- there, so every block of the shape is pushed. For a schematic at load.
+local BLIND = { occupancy = 0 }
 
 function M.at(x, y, z)
     return game.get_block{ x = x, y = y, z = z }
@@ -82,7 +85,7 @@ function M.push_ellipsoid(material, cx, cy, cz, rx, ry, rz, opts)
                 end
                 local mask = M.ellipsoid_mask(bx, by, bz, cx, cy, cz, rx * scale, ry * scale, rz * scale, opts.rough)
                 if mask ~= 0 then
-                    local b = M.at(bx, by, bz)
+                    local b = opts.blind and BLIND or M.at(bx, by, bz)
                     if b ~= nil then
                         if opts.carve then
                             mask = mask & b.occupancy

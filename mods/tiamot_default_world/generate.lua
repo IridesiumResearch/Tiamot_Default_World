@@ -46,8 +46,8 @@ local STACK_Y_BLOCKS = shape.STACK_Y * 1000 + shape.Y0
 local HOLLOW_IN = (shape.HOLLOW_R - SAFETY) * (shape.HOLLOW_R - SAFETY)
 
 -- Chunk-class counters, logged now and then so the cost mix is visible.
-local stats = { air = 0, hollow = 0, filled = 0, carved = 0, surface = 0, shells = 0, total = 0 }
-local LOG_EVERY = 4096
+local stats = { air = 0, hollow = 0, filled = 0, carved = 0, surface = 0, shells = 0, total = 0, stamped = 0 }
+local LOG_EVERY = 1024        -- was 4096: a ninety-second headless run never reached one line
 
 -- Smallest and largest |value| over the integer range [a0, a1].
 local function axis_bounds(a0, a1)
@@ -88,8 +88,8 @@ game.register_on_generate(function(buf, pos)
     stats.total = stats.total + 1
     if stats.total % LOG_EVERY == 0 then
         game.log(string.format(
-            "tiamot_default_world chunks: %d total — air %d, hollow %d, filled %d, carved %d (surface %d), shells %d",
-            stats.total, stats.air, stats.hollow, stats.filled, stats.carved, stats.surface, stats.shells))
+            "tiamot_default_world chunks: %d total — air %d, hollow %d, filled %d, carved %d (surface %d, %d structures stamped), shells %d",
+            stats.total, stats.air, stats.hollow, stats.filled, stats.carved, stats.surface, stats.stamped, stats.shells))
     end
 
     -- Order-independent with any other overworld generator: start empty.
@@ -207,6 +207,20 @@ game.register_on_generate(function(buf, pos)
                 for _, fill in ipairs(fills_of(biome)) do
                     if fill.cover then
                         buf:fill_cover(fill.cover, { cells = fill.cells, take = fill.take })
+                    end
+                end
+            end
+            -- The structures, after the covers: a trunk's base merges into
+            -- the surface block over the grass cells stood in it. The
+            -- engine's `scatter` does the whole neighbourhood pass — every
+            -- chunk within reach derives the same trees and keeps its slice.
+            if buf.scatter then
+                for _, biome in ipairs(found) do
+                    for _, fill in ipairs(fills_of(biome)) do
+                        if fill.scatter then
+                            stats.stamped = stats.stamped + buf:scatter({ depth = fill.depth, stand = fill.stand,
+                                schematics = fill.schematics, cell = fill.cell, chance = fill.chance, salt = fill.salt, sink = fill.sink })
+                        end
                     end
                 end
             end

@@ -386,7 +386,7 @@ between samples), but with the finest octave's amplitude as a margin it
 lets a mod skip nine chunks in ten. It is what the `smooth` fill already
 does internally to find the crossing blocks.
 
-## 3. Structures at generation, across chunk edges (2026-09-09)
+## 3. Structures at generation, across chunk edges (2026-09-09) — LANDED as `game.schematic` + `buf:scatter` (engine, 2026-09-12): the alpine forest is stamped at generation
 
 **Seen.** Trees, rocks and pools are grown at runtime by random tick,
 because a generator cannot read the surface it just wrote and a structure

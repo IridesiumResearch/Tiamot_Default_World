@@ -243,7 +243,11 @@ built one at a time in its own file. Built so far:
       a chain of rough spheres going in. Below a rough tree line 90 blocks
       over the dome, firs: tall and thin, a plus-shaped trunk of five cells
       and a cone of needle pads to a point, tiered on the big ones; one in
-      twenty-one is dead wood, a snag or a fallen trunk. Now and then a
+      twenty-one is dead wood, a snag or a fallen trunk. The forest is
+      there when the chunk is: the firs are schematics stamped by the
+      engine's `scatter` at generation, below a tree line that wanders
+      320 blocks over the base dome, and the random tick thickens it
+      after. Now and then a
       crevasse cracks the glaciers and the high snow, long and narrow, deep
       in the middle, its walls coated with ice. Below the snowline
       dirt over most ground that faces up and cold-tinted turf over most of

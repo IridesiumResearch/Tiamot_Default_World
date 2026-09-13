@@ -318,6 +318,34 @@ engine commit they landed in, because the mod is written against them.
 - Ice is cold blue: a blue texture and a blue-shifting tint.
 - Boulders halved: they stood twice the size they read on paper.
 
+### Alpine, fourteenth cut: the forest at generation, ice crusts lower down
+
+- The forest is generated, not grown: the firs (twelve small, six big,
+  a snag) are built once at load as schematics from the same shape code
+  the tick uses — pushed blind through the edit queue and taken as a
+  list — and the engine's new `buf:scatter` stamps them at generation:
+  one candidate a square of three blocks, half the squares, on the
+  surface it finds down each candidate's column, where the `stand`
+  field allows (below the tree line as it wanders, off the lakes, walls
+  and crests), across chunk edges by the neighbourhood rule. A fir per
+  eighteen columns, fourteen a chunk, the moment the chunk exists. The
+  tree line is up to 320 blocks over the dome (200 was the valley
+  floors and little else): "groups of trees six to ten times too rare".
+  The random tick still grows firs, held apart from these, so the
+  forest thickens where it stands. On an engine without
+  `game.schematic` the mod logs it and the tick alone grows the forest,
+  as before.
+- Ice crusts lower down: a crevasse can crack any alpine surface now,
+  and below the line its coat is a crust — thinner (0.4 past the crack)
+  and rough enough to be patchy; the glaciers and the high snow keep the
+  full coat. The carved hollows get the same crust round every sphere,
+  written before the carves so a later sphere's crust does not fill an
+  earlier one back in.
+- (Engine, same day: leaves inside a canopy are meshed opaque, and
+  foliage beyond the cutout draw distance is drawn solid instead of
+  dropped — see the engine's contract §8.2. Nothing to do in the mod;
+  the leaf textures already carry the leaf colour under their holes.)
+
 ### Housekeeping
 
 - `stubs/game.lua` and `AGENTS.md` re-vendored from the engine's `api/`.

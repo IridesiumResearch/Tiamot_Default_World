@@ -76,6 +76,16 @@ function M.commit(reserve)
     return true
 end
 
+-- Takes the batch instead of queuing it: `begin`, the pushes, then this
+-- returns the list — `{ position, block, occupancy, merge }` each — and
+-- clears it. For building a schematic at load from the same shape code
+-- that grows the thing by tick.
+function M.take()
+    local batch = current or {}
+    current = nil
+    return batch
+end
+
 ---@param reserve integer?
 function M.room(reserve)
     return M.waiting() < MAX_WAITING + (reserve or 0)

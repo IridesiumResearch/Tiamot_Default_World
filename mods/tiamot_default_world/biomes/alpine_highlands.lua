@@ -172,7 +172,9 @@ local PERMAFROST_MIN = 0.05
 local DIRT_FREQ = 1 / 80
 local DIRT_MIN = -0.08
 local DIRT_DEPTH = 0.003                              -- km: three blocks
-local TREELINE = 200                                  -- blocks over the base dome: turf and firs below (the firs read it at runtime); 90 left most of the range bare
+local TREELINE = 320                                  -- blocks over the base dome: turf and firs below (the firs read it at runtime); 200 was the valley floors and little else
+local TREELINE_WANDER = 0.06                          -- km: the line wanders this much (+/- half) at TREELINE_WANDER_FREQ, for the scatter
+local TREELINE_WANDER_FREQ = 1 / 90
 local TURF_FREQ = 1 / 60
 local TURF_MIN = -0.02
 local TURF_DEPTH = 0.001                              -- km: the top block of the dirt
@@ -391,6 +393,21 @@ shape.ALPINE_PEAK = RIDGE_AMP[1] + RIDGE_AMP[2] + RIDGE_AMP[3] + RIDGE_AMP[4] + 
 
 tdw.biomes.alpine_highlands.ring_mode = "alpine"
 tdw.biomes.alpine_highlands.lazy = true               -- its programs read the maps: compiled at the first chunk
+-- The forest, at generation: the firs as schematics for the engine's
+-- `buf:scatter`, built at the END of this file (they need the shapes below)
+-- and read by the fills at the first alpine chunk. One candidate a square
+-- of TREE_CELL blocks, jittered, and TREE_SQUARES of the squares get one:
+-- a fir per eighteen columns, fourteen a chunk, never closer than a block.
+-- The random tick still grows firs after (`grow_fir`, TREE_CHANCE), held
+-- TREE_APART from these, so the forest thickens where it stands; before
+-- the scatter the tick was the whole forest, and a chunk's hundred firs
+-- were minutes of ticks that came only where the player waited.
+-- nil on an engine without `game.schematic`: the tick alone, as before.
+local FIR_SCHEMATICS = nil
+local TREE_CELL = 3
+local TREE_SQUARES = 0.5
+local TREE_SALT = 11
+
 tdw.build_biome("alpine_highlands", function(ctx)
     local function masked(field)
         local mask = tdw.biome_mask(n, "frost", false)
@@ -480,6 +497,13 @@ tdw.build_biome("alpine_highlands", function(ctx)
     end
     local depth = shape.compile("biome.alpine.depth", shape.terrain(false))
     local codes = shape.compile("biome.alpine.codes", code)
+    -- Where a fir may stand, for the scatter: below the tree line as it
+    -- wanders, off the lakes, the walls and the crests, in the biome.
+    -- Sampled once per candidate at its surface.
+    local stand_field = n.sub(n.const(TREELINE / 1000), map_node("alp_height"))
+    stand_field = n.add(stand_field, n.noise("tree_line", TREELINE_WANDER_FREQ, 2, TREELINE_WANDER))
+    for _, gate in ipairs(snow_gates()) do stand_field = n.min(stand_field, gate) end
+    local stand = shape.compile("biome.alpine.stand", masked(stand_field))
     local km = 0.001
     local entries = {
         { code = 1, to = 3 * km, material = blocks.slate },
@@ -498,6 +522,10 @@ tdw.build_biome("alpine_highlands", function(ctx)
         { field = granite, material = blocks.granite, shared_only = true },
         { layers = true, depth = depth, code = codes, entries = entries },
         { cover = blocks.alpine_grass, cells = 2, take = tufts },
+        -- The forest, last: a trunk's base merges into the surface block
+        -- over the grass cells the cover stood in it.
+        FIR_SCHEMATICS and { scatter = true, depth = depth, stand = stand, schematics = FIR_SCHEMATICS,
+            cell = TREE_CELL, chance = TREE_SQUARES, salt = TREE_SALT, sink = 1 } or nil,
     }
 end)
 tdw.biomes.alpine_highlands.soil = blocks.granite
@@ -549,7 +577,12 @@ local CREVASSE_CELL_ONE_IN = 3
 local CREVASSE_LENGTH = { 14, 20 }  -- blocks: least and extra
 local CREVASSE_DEPTH = { 8, 14 }
 local CREVASSE_HALF = { 0.7, 0.9 }  -- half-width, blocks: least and extra
-local CREVASSE_COAT = 0.7           -- how far past the crack the ice reaches
+local CREVASSE_COAT = 0.7           -- how far past the crack the ice reaches, on the glaciers and the high snow
+-- Lower down — a crevasse or a hollow anywhere below the line — the ice is
+-- a crust: thinner, and rough enough to be patchy, "a little bit of ice".
+local CREVASSE_CRUST = 0.4
+local HOLLOW_CRUST = 0.45
+local CRUST_ROUGH = 0.6
 local STATS_EVERY = 200
 
 local GRANITE, SLATE = "tiamot_default_world:granite", "tiamot_default_world:slate"
@@ -904,12 +937,22 @@ local function carve_hollow(x, y, z, rng)
     local r = HOLLOW_R[1] + rng:below(6) / 10 * HOLLOW_R[2]
     -- Start a block out from the tick, at the wall's foot, and go in.
     local cx, cy, cz = x + 0.5 + dir[1] * 1.5, g0 + 1.4 + r * 0.5, z + 0.5 + dir[2] * 1.5
+    local spheres = {}
     for _ = 1, 2 + rng:below(3) do
-        schem.push_ellipsoid("engine:air", cx, cy, cz, r, r * 0.8, r, { carve = true, rough = 0.3 })
+        spheres[#spheres + 1] = { cx, cy, cz, r }
         cx = cx + dir[1] * r * 1.2 + (rng:below(3) - 1) * 0.5
         cz = cz + dir[2] * r * 1.2 + (rng:below(3) - 1) * 0.5
         cy = cy + rng:below(3) * 0.2
         r = r * (0.85 + rng:below(3) / 10)
+    end
+    -- The ice crust first, round every sphere, then the carves: a sphere's
+    -- crust written after the next sphere's carve would fill that back in.
+    for _, s in ipairs(spheres) do
+        schem.push_ellipsoid("tiamot_default_world:ice", s[1], s[2], s[3], s[4] + HOLLOW_CRUST, s[4] * 0.8 + HOLLOW_CRUST, s[4] + HOLLOW_CRUST,
+            { rough = CRUST_ROUGH, over_whole = true })
+    end
+    for _, s in ipairs(spheres) do
+        schem.push_ellipsoid("engine:air", s[1], s[2], s[3], s[4], s[4] * 0.8, s[4], { carve = true, rough = 0.3 })
     end
     return edits.commit(RESERVE.hollow)
 end
@@ -930,9 +973,12 @@ local function carve_crevasse(x, y, z, rng, anywhere)
         stats.unloaded = stats.unloaded + 1
         return false
     end
-    if not anywhere and not (holds(b, blocks.ice) or (holds(b, blocks.snow) and over_dome(x, y, z) > SNOWLINE * 1000)) then
-        return false
-    end
+    -- On the glaciers and the high snow the full coat of ice; lower down —
+    -- any surface below the line — a crust, thin and patchy (`anywhere` is
+    -- the chat word, which takes the coat).
+    local high = anywhere or holds(b, blocks.ice) or (holds(b, blocks.snow) and over_dome(x, y, z) > SNOWLINE * 1000)
+    local coat = high and CREVASSE_COAT or CREVASSE_CRUST
+    local rough = high and 0.25 or CRUST_ROUGH
     local ground = ground_at(x, z, y)
     if ground == nil then
         stats.unloaded = stats.unloaded + 1
@@ -954,8 +1000,8 @@ local function carve_crevasse(x, y, z, rng, anywhere)
     local rx = along_x and length * 0.5 or half
     local rz = along_x and half or length * 0.5
     edits.begin()
-    schem.push_ellipsoid("tiamot_default_world:ice", cx, cy, cz, rx + CREVASSE_COAT, depth * 0.5 + CREVASSE_COAT, rz + CREVASSE_COAT,
-        { rough = 0.25, over_whole = true })
+    schem.push_ellipsoid("tiamot_default_world:ice", cx, cy, cz, rx + coat, depth * 0.5 + coat, rz + coat,
+        { rough = rough, over_whole = true })
     schem.push_ellipsoid("engine:air", cx, cy, cz, rx, depth * 0.5, rz, { carve = true, rough = 0.35 })
     return edits.commit(RESERVE.crevasse)
 end
@@ -1068,3 +1114,76 @@ tdw.on_tick(function(dt_ticks)
         stats.flat, stats.headroom, stats.spacing, stats.no_room, stats.unloaded, stats.errors, last_error or "none"))
     for key in pairs(stats) do stats[key] = 0 end
 end)
+
+-- The firs as schematics: the shapes `grow_fir` and `grow_snag` write, at a
+-- root of (0, 0, 0) — the surface block, since the scatter sinks the root a
+-- block — pushed blind (there is no world to read at load) and taken from
+-- the edit queue as a list. FIR_TEMPLATES of each kind: the scatter picks
+-- among them per square, so the forest has that much variety and no more.
+-- Twice the small as the big, the odds `grow_fir` draws, and one snag for
+-- the dead one in twenty-one.
+local FIR_TEMPLATES = { small = 12, big = 6, snag = 1 }
+local function template_rng(name)
+    return game.rng_stream({ x = 0, y = 0, z = 0, seed = 0 }, "fir_template:" .. name)
+end
+local function fir_blocks(rng, big)
+    local height = schem.pick(rng, big and FIR_BIG or FIR_SMALL)
+    local surface = 0.6                                  -- the crown's zero over the root: a partial surface block's
+    local base_r = big and (2.25 + rng:below(7) / 10) or (1.4 + rng:below(6) / 10)
+    local skirt = math.max(1, math.floor(height / 6))
+    local every = big and 2 or 1
+    edits.begin()
+    for i = skirt, height - 1, every do
+        local t = (i - skirt) / (height - skirt)
+        local r = base_r * (1.0 - t) + 0.35
+        schem.push_ellipsoid(FIR_NEEDLES, 0.5, surface + i + 0.5, 0.5, r, 0.65, r, { rough = 0.3, jitter = rng, blind = true })
+    end
+    schem.push_ellipsoid(FIR_NEEDLES, 0.5, surface + height + 0.3, 0.5, 0.45, 0.9, 0.45, { rough = 0.2, blind = true })
+    for by = 0, height - 1 do
+        edits.push({ x = 0, y = by, z = 0 }, FIR_LOG, PLUS, true)
+    end
+    return edits.take()
+end
+local function snag_blocks(rng, big)
+    local height = math.floor(schem.pick(rng, big and FIR_BIG or FIR_SMALL) * (0.4 + rng:below(4) / 10))
+    edits.begin()
+    for by = 0, height - 2 do
+        edits.push({ x = 0, y = by, z = 0 }, DEAD, PLUS, true)
+    end
+    local jag = 0
+    for _, c in ipairs({ { 1, 1 }, { 0, 1 }, { 2, 1 }, { 1, 0 }, { 1, 2 } }) do
+        jag = jag | schem.bit(c[1], 0, c[2])
+    end
+    for _ = 1, 1 + rng:below(3) do
+        jag = jag | schem.bit(1, 1 + rng:below(2), 1)
+    end
+    edits.push({ x = 0, y = height - 1, z = 0 }, DEAD, jag, true)
+    return edits.take()
+end
+-- A captured list of edits as a schematic: `{dx, dy, dz, material, mask}`
+-- each, the material by id.
+local function schematic_of(list)
+    local blocks_out = {}
+    for _, e in ipairs(list) do
+        local p = e[1]
+        blocks_out[#blocks_out + 1] = { p.x, p.y, p.z, game.get_block_id(e[2]), e[3] }
+    end
+    return game.schematic(blocks_out)
+end
+if game.schematic then
+    FIR_SCHEMATICS = {}
+    for i = 1, FIR_TEMPLATES.small do
+        FIR_SCHEMATICS[#FIR_SCHEMATICS + 1] = schematic_of(fir_blocks(template_rng("small:" .. i), false))
+    end
+    for i = 1, FIR_TEMPLATES.big do
+        FIR_SCHEMATICS[#FIR_SCHEMATICS + 1] = schematic_of(fir_blocks(template_rng("big:" .. i), true))
+    end
+    for i = 1, FIR_TEMPLATES.snag do
+        FIR_SCHEMATICS[#FIR_SCHEMATICS + 1] = schematic_of(snag_blocks(template_rng("snag:" .. i), i % 2 == 0))
+    end
+    local blocks_total = 0
+    for _, sc in ipairs(FIR_SCHEMATICS) do blocks_total = blocks_total + sc:len() end
+    game.log(string.format("tiamot_default_world alpine: %d fir schematics, %d blocks, for the scatter", #FIR_SCHEMATICS, blocks_total))
+else
+    game.log("tiamot_default_world alpine: no game.schematic in this engine; the firs grow by tick alone")
+end
